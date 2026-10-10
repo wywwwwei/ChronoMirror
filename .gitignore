@@ -1,0 +1,27 @@
+# Environments & Python Cache
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Sensitive Environment Variables (Never commit!)
+.env
+*.env.local
+
+# IDE & OS
+.DS_Store
+.idea/
+.vscode/
+
+# Vault User Privacy Data (防止日记与个人隐私外泄)
+# 默认忽略真实的日常日记、复盘与附件
+vault/logs/*.md
+vault/attachments/*
+vault/reviews/daily/*.md
+vault/reviews/weekly/*.md
+
+# 保留目录结构与占位符
+!.gitkeep
+!vault/**/.gitkeep

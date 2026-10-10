@@ -1,0 +1,224 @@
+<div align="center">
+
+# 🪞 GuanFu (观复) · ChronoMirror
+### AI 驱动的量化自我与认知复盘外脑 (Quantified Self & Cognitive Retro)
+
+> *“万物并作，吾以观复。” ——《道德经》*
+
+[![Python](https://img.shields.io/badge/Python-3.12+-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
+[![Telegram Bot](https://img.shields.io/badge/Telegram-Bot-2CA5E0.svg?logo=telegram&logoColor=white)](https://telegram.org/)
+[![Google Gemini](https://img.shields.io/badge/LLM-Gemini_2.5-4E75F6.svg?logo=google&logoColor=white)](https://ai.google.dev/)
+[![OpenAI Compatible](https://img.shields.io/badge/LLM-OpenAI_Compatible-412991.svg?logo=openai&logoColor=white)](https://platform.openai.com/)
+[![Obsidian Ready](https://img.shields.io/badge/Storage-Obsidian_Vault-7C3AED.svg?logo=obsidian&logoColor=white)](https://obsidian.md/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+</div>
+
+---
+
+## 📖 项目愿景
+
+很多人尝试过写日记或做个人复盘，但通常死于两个痛点：
+1. **记录摩擦力太大**：每天面对空白文档，格式繁琐，坚持不了两周。
+2. **复盘变成自我欺骗**：人天生倾向于美化自己，逃避认知失调，难以跳出自我防御机制。
+
+**GuanFu (观复)** 的核心使命是：**以极低摩擦捕获你的全天真实生活流，并让 AI 作为一面冷峻、客观的镜像，代替你进行认知诊断、盲点解构与中长期复盘。**
+
+---
+
+## 🏛️ 核心架构：金字塔增量压缩模型 (Token Optimization)
+
+如果你每天把所有的原始文字、照片不断喂给大模型，Token 消耗会呈几何级膨胀，且模型会因为上下文过长产生注意力涣散（Lost in the Middle）。
+
+本项目采用了独创的 **4 层金字塔增量压缩模型**：
+
+```mermaid
+flowchart TD
+    subgraph Capture["📥 1. 随手捕获 (5 秒内完成)"]
+        Voice["🎙️ 语音闪念 (随时口述)"]
+        Image["📸 照片记录 (饮食/穿搭/发票)"]
+        Text["💬 碎片想法/行为/待办"]
+    end
+
+    subgraph Preprocess["⚙️ 2. 即时降维 (Token 降低 90%)"]
+        STT["Whisper / Gemini 语音识别转写"]
+        VLM["多模态大模型即时提取特征: <br/>转为 50 字结构化特征描述并嵌入日记"]
+    end
+
+    subgraph Vault["📂 3. 本地存储库 (Obsidian 兼容)"]
+        L0["L0: 每日流水账 (YYYY-MM-DD.md)"]
+        L1["L1: 每日深度复盘 (Daily Review)"]
+        L2["L2: 周度战略复盘 (Weekly Review)"]
+        L3["L3: 动态长期画像 (user_profile.md)"]
+    end
+
+    subgraph Engine["🧠 4. 增量复盘引擎"]
+        DailyJob["每晚 23:00 自动复盘:<br/>仅消耗 当日 L0 + L3 画像 (~1.5k Token)"]
+        WeeklyJob["周日 22:00 战略复盘:<br/>仅消耗 7 篇 L1 + L3 画像 (~3.5k Token)"]
+    end
+
+    Voice --> STT --> L0
+    Image --> VLM --> L0
+    Text --> L0
+
+    L0 --> DailyJob --> L1
+    L1 --> WeeklyJob --> L2
+    L2 -.->|每月沉淀核心规律| L3
+    L3 -.->|作为认知背景注入| DailyJob
+    L3 -.->|作为认知背景注入| WeeklyJob
+```
+
+*   **图片“即时降维，一次性消耗”**：照片录入瞬间，大模型即时提取 `[饮食热量/穿搭/环境]` 结构化文本。**后续日复盘和周复盘只读纯文本，不再重复上传图片**。
+*   **周复盘只读 7 篇日复盘**：周复盘不读上万字的原始日记流水，只综合 7 篇已提炼的 L1 结果，将 Token 消耗稳定在极低水位。
+
+---
+
+## ✨ 主要特性
+
+- **全平台随时采集**：通过 Telegram Bot 发送语音、拍照、文字，无网络穿透负担，开机即用。
+- **双大模型引擎自由切换**：
+  - 原生支持 **Google Gemini API**（Gemini 2.5 Flash / 2.0，多模态性价比首选）。
+  - 原生支持 **OpenAI 兼容接口**（可自由接入 DeepSeek、GPT-4o、硅基流动、OneAPI 等）。
+- **长期个人画像动态进化 (L3 Memory)**：
+  - AI 持续在 `vault/memory/user_profile.md` 中记录并迭代关于你的身体规律、认知偏差与高 ROI 行为习惯。
+- **本地优先与隐私保护**：
+  - 核心记录均保存在本地 Markdown 文件中，可用 **Obsidian** 直接打开查看与关系图谱分析。
+  - `.gitignore` 默认屏蔽个人日记与多媒体，开源上传时无需担心隐私外泄。
+- **定时自动推送**：
+  - 每晚 23:00 自动分析今日日志，生成深度日复盘并回推到手机。
+  - 每周日 22:00 自动汇总过去 7 天，生成宏观周度战略分析报告。
+
+---
+
+## 📂 存储目录规范 (`vault/`)
+
+```
+vault/
+├── logs/                   # L0: 每日原始时间流流水账 (YYYY-MM-DD.md)
+├── attachments/            # 多媒体原始文件 (语音 .ogg / 照片 .jpg)
+├── reviews/
+│   ├── daily/              # L1: 每日深度复盘 (YYYY-MM-DD.md)
+│   └── weekly/             # L2: 周度战略复盘 (YYYY-Www.md)
+└── memory/
+    └── user_profile.md     # L3: 个人动态画像与思维模型 (长期记忆)
+```
+
+---
+
+## 🚀 快速上手
+
+### 1. 克隆项目与安装环境
+
+```bash
+git clone https://github.com/your-username/GuanFu.git
+cd GuanFu
+
+# 创建并激活虚拟环境
+python3 -m venv venv
+source venv/bin/activate
+
+# 安装依赖
+pip install -r requirements.txt
+```
+
+### 2. 配置环境变量
+
+复制配置文件模版：
+```bash
+cp .env.example .env
+```
+
+打开 `.env` 文件并填入你的参数：
+```ini
+# 1. Telegram Bot Token (在 Telegram 搜索 @BotFather 发送 /newbot 获取)
+TELEGRAM_BOT_TOKEN="your_bot_token"
+
+# 2. 如果在大陆网络且需要本地代理 (如 Clash 默认 7890 端口):
+# TELEGRAM_PROXY="http://127.0.0.1:7890"
+
+# 3. 大模型配置 (默认推荐 Gemini)
+DEFAULT_LLM_PROVIDER="gemini"
+GEMINI_API_KEY="your_gemini_api_key"
+GEMINI_MODEL="gemini-2.5-flash"
+
+# 若后续使用 OpenAI / DeepSeek / 硅基流动:
+# DEFAULT_LLM_PROVIDER="openai"
+# OPENAI_API_KEY="your_api_key"
+# OPENAI_BASE_URL="https://api.deepseek.com/v1"
+# OPENAI_MODEL="deepseek-chat"
+```
+
+### 3. 启动运行
+
+#### 方式 A：本地直接运行 (推荐日常使用)
+```bash
+python main.py
+```
+
+#### 方式 B：本地终端交互模式 (无需配置 Telegram，即刻体验)
+```bash
+python main.py --cli
+```
+
+#### 方式 C：Docker 一键常驻运行
+```bash
+docker compose up -d --build
+```
+
+---
+
+## 🔒 账号安全与权限隔离
+
+为了防止他人给你的机器人发送消息污染你的日记：
+1. 启动服务后，用你的 Telegram 账号给机器人发送 `/start`。
+2. 机器人会返回你的数字 `Telegram User ID`（例如 `987654321`）。
+3. 将此 ID 填入 `.env` 中的 `ALLOWED_USER_IDS=987654321` 并重启服务。
+4. 此后系统将严格拒绝任何陌生账号的访问。
+
+---
+
+## 📱 日常交互指令速查
+
+| 交互动作 / 指令 | 说明 |
+| :--- | :--- |
+| **发送文本消息** | 自动记录时间戳并追加到今日时间流日志（L0） |
+| **发送语音消息** | 自动识别转写为文字并按时间戳归档 |
+| **发送照片 (可带附言)** | 视觉大模型即时提取饮食热量、穿搭适宜度或场景文字记录 |
+| `/today` | 快速查看今日记录的时间流水账 |
+| `/review` | 立即手动触发今日深度复盘（日常会在每晚 23:00 自动触发推送） |
+| `/review 2026-10-10` | 指定复盘某一天的记录 |
+| `/weekly` | 立即生成本周战略复盘，并自动提炼更新 L3 长期画像 |
+| `/profile` | 查看当前 AI 提炼的长期思维与行为画像 |
+| `/id` | 查询当前 Telegram 账号的用户 ID |
+
+---
+
+## 🚢 云服务器 (VPS) 迁移指南
+
+当你购入云服务器后，得益于 Telegram 的长轮询（Long Polling）机制，**无需域名、无需公网 IP 解析、无需 Nginx 反代**：
+
+```bash
+# 1. 将项目同步至服务器
+rsync -avz --exclude 'venv' ./ root@your_server_ip:/opt/GuanFu/
+
+# 2. 在服务器上一键启动容器
+cd /opt/GuanFu
+docker compose up -d --build
+
+# 3. 实时查看后台运行日志
+docker compose logs -f
+```
+
+---
+
+## 🛡️ 隐私与安全说明
+
+- **个人日记不随代码提交**：项目的 `.gitignore` 已预设规则，会自动忽略 `vault/logs/*.md`、`vault/reviews/**/*.md` 以及 `vault/attachments/*`。
+- **敏感配置隔离**：所有的 API Key 与 Token 严格隔离在 `.env` 中，严禁提交到公共仓库。
+
+---
+
+## 📄 开源许可证
+
+本项目基于 [MIT License](LICENSE) 开源。

@@ -1,0 +1,10 @@
+services:
+  personal-growth:
+    build: .
+    container_name: personal_growth_bot
+    restart: unless-stopped
+    volumes:
+      - ./vault:/app/vault
+      - ./.env:/app/.env:ro
+    environment:
+      - TZ=Asia/Shanghai
