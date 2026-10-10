@@ -6,6 +6,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from config.settings import settings
 from core.review_engine import review_engine
+from core.user_config import user_config_manager
 
 logger = logging.getLogger(__name__)
 
@@ -17,34 +18,46 @@ class ReviewScheduler:
     def set_bot(self, bot):
         self.bot = bot
 
-    async def _send_to_users(self, text: str):
+    async def _send_to_user(self, user_id: int, text: str):
         if not self.bot:
             return
         chunk_size = 4000
-        for user_id in settings.allowed_user_ids_list:
-            try:
-                for i in range(0, len(text), chunk_size):
-                    await self.bot.send_message(chat_id=user_id, text=text[i:i + chunk_size])
-            except Exception as e:
-                logger.error(f"向用户 {user_id} 发送定时推送失败: {e}")
+        try:
+            for i in range(0, len(text), chunk_size):
+                await self.bot.send_message(chat_id=user_id, text=text[i:i + chunk_size])
+        except Exception as e:
+            logger.error(f"向用户 {user_id} 发送定时推送失败: {e}")
 
     async def scheduled_daily_review(self):
-        logger.info("执行定时每日复盘...")
-        success, review_text, path = await review_engine.run_daily_review()
-        if success:
-            msg = f"🌙 【每晚深度复盘与认知镜像】\n\n{review_text}"
-            await self._send_to_users(msg)
-        else:
-            logger.info(f"每日复盘跳过: {review_text}")
+        logger.info("执行定时每日复盘 (多用户)...")
+        active_users = user_config_manager.list_active_users()
+        logger.info(f"待复盘用户列表: {active_users}")
+
+        for user_id in active_users:
+            try:
+                success, review_text, path = await review_engine.run_daily_review(user_id=user_id)
+                if success:
+                    msg = f"🌙 【每晚深度复盘与认知镜像】\n\n{review_text}"
+                    await self._send_to_user(user_id, msg)
+                else:
+                    logger.info(f"用户 {user_id} 每日复盘跳过: {review_text}")
+            except Exception as e:
+                logger.exception(f"用户 {user_id} 每日复盘异常: {e}")
 
     async def scheduled_weekly_review(self):
-        logger.info("执行定时周度战略复盘...")
-        success, weekly_text, path = await review_engine.run_weekly_review()
-        if success:
-            msg = f"📊 【周日战略复盘与长期画像更新】\n\n{weekly_text}"
-            await self._send_to_users(msg)
-        else:
-            logger.info(f"周复盘跳过: {weekly_text}")
+        logger.info("执行定时周度战略复盘 (多用户)...")
+        active_users = user_config_manager.list_active_users()
+
+        for user_id in active_users:
+            try:
+                success, weekly_text, path = await review_engine.run_weekly_review(user_id=user_id)
+                if success:
+                    msg = f"📊 【周日战略复盘与长期画像更新】\n\n{weekly_text}"
+                    await self._send_to_user(user_id, msg)
+                else:
+                    logger.info(f"用户 {user_id} 周复盘跳过: {weekly_text}")
+            except Exception as e:
+                logger.exception(f"用户 {user_id} 周复盘异常: {e}")
 
     def start(self):
         # Daily review trigger

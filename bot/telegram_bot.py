@@ -1,7 +1,6 @@
 import datetime
-import io
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -15,6 +14,7 @@ from config.settings import settings
 from core.storage import storage
 from core.llm_service import llm
 from core.review_engine import review_engine
+from core.user_config import user_config_manager, UserConfig
 
 logger = logging.getLogger(__name__)
 
@@ -24,101 +24,259 @@ def is_authorized(user_id: int) -> bool:
         return True
     return user_id in allowed
 
-async def send_long_message(update: Update, text: str):
+async def send_long_message(update: Update, text: str, parse_mode: Optional[str] = None):
     """Splits text into chunks of <= 4000 characters to comply with Telegram limits"""
     chunk_size = 4000
     if len(text) <= chunk_size:
-        await update.effective_message.reply_text(text)
+        await update.effective_message.reply_text(text, parse_mode=parse_mode)
         return
 
     for i in range(0, len(text), chunk_size):
         chunk = text[i:i + chunk_size]
-        await update.effective_message.reply_text(chunk)
+        await update.effective_message.reply_text(chunk, parse_mode=parse_mode)
 
-async def check_auth_or_reject(update: Update) -> bool:
+async def ensure_user_ready(update: Update) -> Tuple[bool, Optional[UserConfig]]:
+    """Checks whitelist and whether user has configured a valid API Key"""
     user = update.effective_user
     if not user:
-        return False
+        return False, None
+
+    # 1. Whitelist Check (if configured)
     if not is_authorized(user.id):
         await update.effective_message.reply_text(
-            f"⛔ 未授权访问。\n你的 Telegram User ID 为: `{user.id}`\n请将其加入 .env 的 ALLOWED_USER_IDS 中。",
+            f"⛔ 未授权访问。\n你的 Telegram User ID 为: `{user.id}`\n此机器人仅供授权白名单使用。",
             parse_mode="Markdown"
         )
-        return False
-    return True
+        return False, None
+
+    # 2. Key Check
+    config = user_config_manager.get_user_config(user.id)
+    if not config.has_valid_key():
+        await update.effective_message.reply_text(
+            "⚠️ **你尚未绑定有效的 AI API Key，暂时无法使用记录与复盘功能。**\n\n"
+            "请先在私聊中发送以下指令完成绑定：\n\n"
+            "🔹 **绑定 Google Gemini Key**：\n"
+            "`/setkey gemini 你的GeminiKey`\n\n"
+            "🔹 **绑定 OpenAI 兼容 Key**（支持 DeepSeek / 硅基流动等）：\n"
+            "`/setkey openai 你的Key`\n"
+            "若使用第三方代理，可带上 Base URL：\n"
+            "`/setkey openai 你的Key https://api.deepseek.com/v1`\n\n"
+            "*(发送后，机器人会自动从聊天记录中删除你的密钥消息，保障隐私安全)*",
+            parse_mode="Markdown"
+        )
+        return False, None
+
+    return True, config
 
 # --- Command Handlers ---
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    if not await check_auth_or_reject(update):
+    if not user:
         return
 
+    config = user_config_manager.get_user_config(user.id)
+    config.username = user.username
+    config.first_name = user.first_name
+    user_config_manager.save_user_config(config)
+
+    has_key = config.has_valid_key()
+    status_text = f"✅ 已就绪 (当前模型提供商: `{config.active_provider}`)" if has_key else "⚠️ **尚未绑定 API Key**（需先设置）"
+
     welcome_text = (
-        f"👋 你好，{user.first_name}！我是你的 AI 个人成长复盘外脑。\n\n"
-        "💡 **随时记录模式**：\n"
-        "- 💬 直接发送文字：记录闪念、想法、工作待办\n"
-        "- 🎙️ 发送语音消息：自动转写文字并归档（无痛记录）\n"
-        "- 📸 发送照片（可带文字说明）：自动提取饮食、穿搭、场景特征\n\n"
-        "⚡ **复盘与管理指令**：\n"
-        "- `/review`：立即生成今天的深度日复盘\n"
-        "- `/review YYYY-MM-DD`：复盘指定某一天的日记\n"
+        f"👋 你好，{user.first_name}！欢迎使用 **ChronoMirror (观复)** 个人认知复盘外脑。\n\n"
+        f"🔑 **当前状态**：{status_text}\n\n"
+        "💡 **核心功能**：\n"
+        "- 💬 发送文字：记录闪念、想法、工作待办\n"
+        "- 🎙️ 发送语音：自动识别口语转文字归档\n"
+        "- 📸 发送照片：视觉模型即时提炼饮食、穿搭、场景特征（节省 90% Token）\n\n"
+        "⚡ **常用指令**：\n"
+        "- `/setkey`：绑定或切换 Gemini / OpenAI API Key\n"
+        "- `/switch`：在 Gemini 和 OpenAI 之间快速切换\n"
+        "- `/status`：查看当前绑定的 Key 状态与配置\n"
+        "- `/today`：查看今日时间流记录\n"
+        "- `/review`：立即生成今日深度日复盘\n"
         "- `/weekly`：立即生成本周战略复盘并沉淀长期画像\n"
-        "- `/today`：查看今天已记录的时间流日志\n"
-        "- `/profile`：查看当前积累的长期画像与思维模型 (L3)\n"
+        "- `/profile`：查看当前积累的个人长期画像 (L3 Memory)\n"
         "- `/id`：查看当前 Telegram User ID\n"
     )
+
+    if not has_key:
+        welcome_text += (
+            "\n❗ **请先绑定 Key 开启使用**：\n"
+            "例如发送：`/setkey gemini 你的GeminiKey`"
+        )
+
     await update.effective_message.reply_text(welcome_text, parse_mode="Markdown")
 
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    await update.effective_message.reply_text(f"你的 Telegram User ID 是: `{user.id}`", parse_mode="Markdown")
+
+async def setkey_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if not user:
+        return
+
+    # Delete the message containing sensitive key if possible
+    try:
+        await update.effective_message.delete()
+    except Exception:
+        pass
+
+    args = context.args
+    if not args or len(args) < 2:
+        config = user_config_manager.get_user_config(user.id)
+        help_text = (
+            "⚙️ **API Key 设置指令帮助**\n\n"
+            "用法格式：\n"
+            "`/setkey <gemini|openai> <api_key> [可选BaseURL]`\n\n"
+            "📝 **示例**：\n"
+            "1. 绑定 Gemini Key：\n"
+            "   `/setkey gemini AIzaSyDxxxxxxxxx`\n\n"
+            "2. 绑定 OpenAI 原生 Key：\n"
+            "   `/setkey openai sk-proj-xxxxxxxxx`\n\n"
+            "3. 绑定 DeepSeek / 硅基流动等兼容接口：\n"
+            "   `/setkey openai sk-xxxx https://api.deepseek.com/v1`\n\n"
+            "🔍 **当前绑定状态**：\n"
+            f"- 当前生效提供商: `{config.active_provider}`\n"
+            f"- Gemini Key: `{config.masked_gemini_key()}`\n"
+            f"- OpenAI Key: `{config.masked_openai_key()}`\n"
+            f"- OpenAI Base URL: `{config.openai_base_url or '官方默认'}`\n"
+        )
+        await update.effective_chat.send_message(help_text, parse_mode="Markdown")
+        return
+
+    provider = args[0].lower().strip()
+    api_key = args[1].strip()
+    base_url = args[2].strip() if len(args) > 2 else None
+
+    config = user_config_manager.get_user_config(user.id)
+    config.username = user.username
+    config.first_name = user.first_name
+
+    if provider == "gemini":
+        config.gemini_api_key = api_key
+        config.active_provider = "gemini"
+        user_config_manager.save_user_config(config)
+        await update.effective_chat.send_message(
+            f"✅ **Google Gemini API Key 绑定成功！**\n"
+            f"- 当前提供商已自动切换为: `gemini`\n"
+            f"- 掩码密钥: `{config.masked_gemini_key()}`\n\n"
+            "🔒 *提示：包含明文密钥的消息已被自动清理，你可以随时开始记录或复盘了！*",
+            parse_mode="Markdown"
+        )
+    elif provider == "openai":
+        config.openai_api_key = api_key
+        config.active_provider = "openai"
+        if base_url:
+            config.openai_base_url = base_url
+        user_config_manager.save_user_config(config)
+        await update.effective_chat.send_message(
+            f"✅ **OpenAI 兼容 API Key 绑定成功！**\n"
+            f"- 当前提供商已自动切换为: `openai`\n"
+            f"- 掩码密钥: `{config.masked_openai_key()}`\n"
+            f"- Base URL: `{config.openai_base_url or 'https://api.openai.com/v1'}`\n\n"
+            "🔒 *提示：包含明文密钥的消息已被自动清理，你可以随时开始记录或复盘了！*",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.effective_chat.send_message(
+            "❌ 无效的提供商类型！目前支持 `gemini` 或 `openai`。\n"
+            "正确示例: `/setkey gemini 你的Key` 或 `/setkey openai 你的Key`"
+        )
+
+async def switch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    config = user_config_manager.get_user_config(user.id)
+    
+    args = context.args
+    target_provider = args[0].lower().strip() if args else None
+
+    if not target_provider:
+        # Toggle between gemini and openai
+        target_provider = "openai" if config.active_provider == "gemini" else "gemini"
+
+    if target_provider not in ("gemini", "openai"):
+        await update.effective_message.reply_text("❌ 只支持切换至 `gemini` 或 `openai`。")
+        return
+
+    config.active_provider = target_provider
+    user_config_manager.save_user_config(config)
+
+    has_key = config.has_valid_key()
+    key_tip = "✅ 密钥已就绪" if has_key else "⚠️ 注意：该提供商尚未配置 Key，请用 `/setkey` 配置"
     await update.effective_message.reply_text(
-        f"你的 Telegram User ID 是: `{user.id}`",
+        f"🔄 当前生效的 AI 模型提供商已切换为: `{target_provider}`\n{key_tip}",
         parse_mode="Markdown"
     )
 
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    config = user_config_manager.get_user_config(user.id)
+
+    status_text = (
+        f"📊 **ChronoMirror 账户配置状态**\n\n"
+        f"- **User ID**: `{user.id}`\n"
+        f"- **用户**: {user.first_name} (@{user.username or '无'})\n"
+        f"- **当前生效模型**: `{config.active_provider}`\n"
+        f"- **Gemini 状态**: `{config.masked_gemini_key()}`\n"
+        f"- **OpenAI 状态**: `{config.masked_openai_key()}`\n"
+        f"- **OpenAI BaseURL**: `{config.openai_base_url or '官方默认'}`\n"
+        f"- **是否可正常使用**: {'✅ 是' if config.has_valid_key() else '❌ 否 (需设置 Key)'}\n"
+    )
+    await update.effective_message.reply_text(status_text, parse_mode="Markdown")
+
 async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_auth_or_reject(update):
+    ok, _ = await ensure_user_ready(update)
+    if not ok:
         return
+    user_id = update.effective_user.id
     today_str = datetime.date.today().strftime("%Y-%m-%d")
-    content = await storage.get_daily_log(today_str)
+    content = await storage.get_daily_log(user_id, today_str)
     if not content:
         await update.effective_message.reply_text(f"今日 ({today_str}) 还没有任何记录，随时发点文字、语音或照片吧！")
         return
     await send_long_message(update, f"📋 【今日记录流水账】\n\n{content}")
 
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_auth_or_reject(update):
+    ok, _ = await ensure_user_ready(update)
+    if not ok:
         return
-    profile_content = await storage.get_user_profile()
+    user_id = update.effective_user.id
+    profile_content = await storage.get_user_profile(user_id)
     await send_long_message(update, f"👤 【当前长期画像 (L3 Memory)】\n\n{profile_content}")
 
 async def review_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_auth_or_reject(update):
+    ok, _ = await ensure_user_ready(update)
+    if not ok:
         return
+    user_id = update.effective_user.id
 
     target_date = None
     if context.args:
         target_date = context.args[0].strip()
-    
+
     date_label = target_date or datetime.date.today().strftime("%Y-%m-%d")
     status_msg = await update.effective_message.reply_text(f"🤖 正在为 {date_label} 进行深度日复盘与思维诊断，请稍候...")
 
-    success, review_text, path = await review_engine.run_daily_review(target_date)
+    success, review_text, path = await review_engine.run_daily_review(user_id=user_id, target_date=target_date)
     if not success:
         await status_msg.edit_text(f"⚠️ 复盘未生成: {review_text}")
         return
 
     await status_msg.delete()
-    header = f"✅ 【日复盘已生成并已归档至 Obsidian】\n\n"
+    header = "✅ 【日复盘已生成并已归档】\n\n"
     await send_long_message(update, header + review_text)
 
 async def weekly_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_auth_or_reject(update):
+    ok, _ = await ensure_user_ready(update)
+    if not ok:
         return
+    user_id = update.effective_user.id
 
     status_msg = await update.effective_message.reply_text("📊 正在汇总过去 7 天的复盘，生成周度战略分析并更新长期画像...")
-    success, weekly_text, path = await review_engine.run_weekly_review()
+    success, weekly_text, path = await review_engine.run_weekly_review(user_id=user_id)
     if not success:
         await status_msg.edit_text(f"⚠️ 周复盘未生成: {weekly_text}")
         return
@@ -130,43 +288,47 @@ async def weekly_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Message Handlers (Capture Layer) ---
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_auth_or_reject(update):
+    ok, _ = await ensure_user_ready(update)
+    if not ok:
         return
 
+    user_id = update.effective_user.id
     text = update.effective_message.text
     now = datetime.datetime.now()
     time_str = now.strftime("%H:%M:%S")
 
-    await storage.append_log(content=text, tag="文字记录", dt=now)
+    await storage.append_log(user_id=user_id, content=text, tag="文字记录", dt=now)
     preview = text if len(text) < 30 else text[:27] + "..."
     await update.effective_message.reply_text(f"✅ 已记下 [{time_str}]: {preview}")
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_auth_or_reject(update):
+    ok, user_config = await ensure_user_ready(update)
+    if not ok:
         return
 
+    user_id = update.effective_user.id
     voice = update.effective_message.voice
     status_msg = await update.effective_message.reply_text("🎙️ 正在下载并转写语音，请稍候...")
 
     try:
         tg_file = await voice.get_file()
         file_bytes = await tg_file.download_as_bytearray()
-        
+
         now = datetime.datetime.now()
         timestamp_str = now.strftime("%Y%m%d_%H%M%S")
         filename = f"voice_{timestamp_str}.ogg"
-        
-        # Save attachment
-        saved_path, rel_path = await storage.save_attachment(bytes(file_bytes), filename)
 
-        # Transcribe
-        transcript = await llm.transcribe_audio(saved_path, mime_type="audio/ogg")
+        # Save attachment in user folder
+        saved_path, rel_path = await storage.save_attachment(user_id=user_id, file_bytes=bytes(file_bytes), filename=filename)
+
+        # Transcribe with user's config
+        transcript = await llm.transcribe_audio(audio_path=saved_path, user_config=user_config, mime_type="audio/ogg")
         if not transcript:
             transcript = "（未能识别出有效语音文字）"
 
         # Append to log
         log_entry = f"语音转写：{transcript}"
-        await storage.append_log(content=log_entry, tag="语音记录", dt=now, attachment_rel_path=rel_path)
+        await storage.append_log(user_id=user_id, content=log_entry, tag="语音记录", dt=now, attachment_rel_path=rel_path)
 
         await status_msg.edit_text(f"🎙️ 已转写归档 [{now.strftime('%H:%M:%S')}]:\n\n{transcript}")
     except Exception as e:
@@ -174,10 +336,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text(f"❌ 语音处理失败: {str(e)}")
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_auth_or_reject(update):
+    ok, user_config = await ensure_user_ready(update)
+    if not ok:
         return
 
-    # Telegram sends multiple photo sizes; the last one is the largest
+    user_id = update.effective_user.id
     photo = update.effective_message.photo[-1]
     caption = update.effective_message.caption or ""
     status_msg = await update.effective_message.reply_text("📸 正在提取照片特征并进行文字降维...")
@@ -190,12 +353,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         timestamp_str = now.strftime("%Y%m%d_%H%M%S")
         filename = f"photo_{timestamp_str}.jpg"
 
-        # Save attachment
-        saved_path, rel_path = await storage.save_attachment(bytes(file_bytes), filename)
+        # Save attachment in user folder
+        saved_path, rel_path = await storage.save_attachment(user_id=user_id, file_bytes=bytes(file_bytes), filename=filename)
 
-        # Analyze image
+        # Analyze image with user's config
         description = await llm.describe_image(
             image_bytes=bytes(file_bytes),
+            user_config=user_config,
             mime_type="image/jpeg",
             user_caption=caption
         )
@@ -207,7 +371,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         entry_parts.append(description)
         log_entry = "\n".join(entry_parts)
 
-        await storage.append_log(content=log_entry, tag="视觉记录", dt=now, attachment_rel_path=rel_path)
+        await storage.append_log(user_id=user_id, content=log_entry, tag="视觉记录", dt=now, attachment_rel_path=rel_path)
 
         await status_msg.edit_text(f"📸 影像特征已归档 [{now.strftime('%H:%M:%S')}]:\n\n{description}")
     except Exception as e:
@@ -228,6 +392,9 @@ def build_telegram_app():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", start_command))
     app.add_handler(CommandHandler("id", id_command))
+    app.add_handler(CommandHandler("setkey", setkey_command))
+    app.add_handler(CommandHandler("switch", switch_command))
+    app.add_handler(CommandHandler("status", status_command))
     app.add_handler(CommandHandler("today", today_command))
     app.add_handler(CommandHandler("profile", profile_command))
     app.add_handler(CommandHandler("review", review_command))

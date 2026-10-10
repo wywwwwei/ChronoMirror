@@ -15,12 +15,17 @@ __pycache__/
 .idea/
 .vscode/
 
-# Vault User Privacy Data (防止日记与个人隐私外泄)
-# 默认忽略真实的日常日记、复盘与附件
+# Vault User Privacy Data (绝对保护用户个人隐私与API Key)
 vault/logs/*.md
 vault/attachments/*
 vault/reviews/daily/*.md
 vault/reviews/weekly/*.md
+
+# 多用户隔离数据保护
+vault/users/*/logs/*.md
+vault/users/*/attachments/*
+vault/users/*/reviews/**/*.md
+vault/users/*/config.json
 
 # 保留目录结构与占位符
 !.gitkeep
