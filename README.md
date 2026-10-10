@@ -7,7 +7,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
-[![Telegram Bot](https://img.shields.io/badge/Telegram-Bot-2CA5E0.svg?logo=telegram&logoColor=white)](https://telegram.org/)
+[![Telegram Bot](https://img.shields.io/badge/Telegram_Bot-@ChronoMirrorBot-2CA5E0.svg?logo=telegram&logoColor=white)](https://t.me/ChronoMirrorBot)
 [![Google Gemini](https://img.shields.io/badge/LLM-Gemini_2.5-4E75F6.svg?logo=google&logoColor=white)](https://ai.google.dev/)
 [![OpenAI Compatible](https://img.shields.io/badge/LLM-OpenAI_Compatible-412991.svg?logo=openai&logoColor=white)](https://platform.openai.com/)
 [![Obsidian Ready](https://img.shields.io/badge/Storage-Obsidian_Vault-7C3AED.svg?logo=obsidian&logoColor=white)](https://obsidian.md/)
@@ -27,50 +27,19 @@
 
 ---
 
-## 🏛️ 核心架构：金字塔增量压缩模型 (Token Optimization)
+## ⚡ 极速上手：免部署方案 (Zero-Setup)
 
-如果你每天把所有的原始文字、照片不断喂给大模型，Token 消耗会呈几何级膨胀，且模型会因为上下文过长产生注意力涣散（Lost in the Middle）。
+> **💡 不想自行搭建服务器或配置本地代码？**  
+> 你可以直接使用已经部署就绪的官方机器人服务：
 
-本项目采用了独创的 **4 层金字塔增量压缩模型**：
+1. **进入对话**：在 Telegram 搜索并私聊 [**@ChronoMirrorBot**](https://t.me/ChronoMirrorBot)
+2. **激活会话**：发送 `/start` 查看功能指引
+3. **绑定个人密钥**：发送你的 API Key（**二选一**）：
+   - 绑定 Gemini：`/setkey gemini 你的GeminiKey`
+   - 绑定 OpenAI / DeepSeek：`/setkey openai 你的Key [可选BaseURL]`
+4. **即刻开始使用**：随时发语音、文字或生活照片，每晚 23:00 系统将自动为你定向推送深度日复盘！
 
-```mermaid
-flowchart TD
-    subgraph Capture["📥 1. 随手捕获 (5 秒内完成)"]
-        Voice["🎙️ 语音闪念 (随时口述)"]
-        Image["📸 照片记录 (饮食/穿搭/发票)"]
-        Text["💬 碎片想法/行为/待办"]
-    end
-
-    subgraph Preprocess["⚙️ 2. 即时降维 (Token 降低 90%)"]
-        STT["Whisper / Gemini 语音识别转写"]
-        VLM["多模态大模型即时提取特征: <br/>转为 50 字结构化特征描述并嵌入日记"]
-    end
-
-    subgraph Vault["📂 3. 本地存储库 (Obsidian 兼容)"]
-        L0["L0: 每日流水账 (YYYY-MM-DD.md)"]
-        L1["L1: 每日深度复盘 (Daily Review)"]
-        L2["L2: 周度战略复盘 (Weekly Review)"]
-        L3["L3: 动态长期画像 (user_profile.md)"]
-    end
-
-    subgraph Engine["🧠 4. 增量复盘引擎"]
-        DailyJob["每晚 23:00 自动复盘:<br/>仅消耗 当日 L0 + L3 画像 (~1.5k Token)"]
-        WeeklyJob["周日 22:00 战略复盘:<br/>仅消耗 7 篇 L1 + L3 画像 (~3.5k Token)"]
-    end
-
-    Voice --> STT --> L0
-    Image --> VLM --> L0
-    Text --> L0
-
-    L0 --> DailyJob --> L1
-    L1 --> WeeklyJob --> L2
-    L2 -.->|每月沉淀核心规律| L3
-    L3 -.->|作为认知背景注入| DailyJob
-    L3 -.->|作为认知背景注入| WeeklyJob
-```
-
-*   **图片“即时降维，一次性消耗”**：照片录入瞬间，大模型即时提取 `[饮食热量/穿搭/环境]` 结构化文本。**后续日复盘和周复盘只读纯文本，不再重复上传图片**。
-*   **周复盘只读 7 篇日复盘**：周复盘不读上万字的原始日记流水，只综合 7 篇已提炼的 L1 结果，将 Token 消耗稳定在极低水位。
+> *注：系统已内置多用户物理隔离，每位用户的数据完全独立保密；发送包含密钥的消息会被机器人自动删除销毁，确保隐私无虞。*
 
 ---
 
