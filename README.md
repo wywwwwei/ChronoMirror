@@ -13,6 +13,10 @@
 [![Obsidian Ready](https://img.shields.io/badge/Storage-Obsidian_Vault-7C3AED.svg?logo=obsidian&logoColor=white)](https://obsidian.md/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+<br/>
+
+**[English](README_EN.md)** | **[简体中文](README.md)**
+
 </div>
 
 ---
