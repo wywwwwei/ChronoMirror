@@ -68,16 +68,8 @@ class UserConfigManager:
             except Exception:
                 pass
         
-        # New default user
-        cfg = UserConfig(user_id=user_id)
-        if settings.GEMINI_API_KEY and (not settings.allowed_user_ids_list or user_id in settings.allowed_user_ids_list):
-            cfg.gemini_api_key = settings.GEMINI_API_KEY
-            cfg.active_provider = "gemini"
-        elif settings.OPENAI_API_KEY and (not settings.allowed_user_ids_list or user_id in settings.allowed_user_ids_list):
-            cfg.openai_api_key = settings.OPENAI_API_KEY
-            cfg.openai_base_url = settings.OPENAI_BASE_URL
-            cfg.active_provider = "openai"
-        return cfg
+        # New default user (must configure key via /setkey)
+        return UserConfig(user_id=user_id)
 
     def save_user_config(self, config: UserConfig):
         config.updated_at = datetime.datetime.now().isoformat()

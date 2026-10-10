@@ -22,17 +22,6 @@ CLI_USER_ID = 99999
 async def run_cli_mode():
     """Terminal interactive test mode (no Telegram bot token needed)"""
     config = user_config_manager.get_user_config(CLI_USER_ID)
-    
-    # Auto-populate from .env if available for CLI convenience
-    if not config.gemini_api_key and settings.GEMINI_API_KEY:
-        config.gemini_api_key = settings.GEMINI_API_KEY
-        config.active_provider = "gemini"
-        user_config_manager.save_user_config(config)
-    elif not config.openai_api_key and settings.OPENAI_API_KEY:
-        config.openai_api_key = settings.OPENAI_API_KEY
-        config.openai_base_url = settings.OPENAI_BASE_URL
-        config.active_provider = "openai"
-        user_config_manager.save_user_config(config)
 
     print("\n" + "=" * 55)
     print("🪞 欢迎进入 ChronoMirror (溯镜) 本地终端交互模式")
