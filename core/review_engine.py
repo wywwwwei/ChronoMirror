@@ -39,8 +39,17 @@ class ReviewEngine:
         except Exception as e:
             return False, f"生成日复盘失败，LLM 报错: {str(e)}", None
 
-        # 5. Save L1 review
-        saved_path = await storage.save_daily_review(user_id, date_str, review_text)
+        # 5. Save L1 review with Obsidian YAML frontmatter
+        obsidian_content = (
+            f"---\n"
+            f"user_id: {user_id}\n"
+            f"date: {date_str}\n"
+            f"type: daily-review\n"
+            f"tags: [review, daily, growth]\n"
+            f"---\n\n"
+            f"{review_text}\n"
+        )
+        saved_path = await storage.save_daily_review(user_id, date_str, obsidian_content)
         return True, review_text, saved_path
 
     async def run_weekly_review(self, user_id: int) -> Tuple[bool, str, Optional[Path]]:
@@ -77,8 +86,17 @@ class ReviewEngine:
         except Exception as e:
             return False, f"生成周复盘失败，LLM 报错: {str(e)}", None
 
-        # 5. Save Weekly Review
-        saved_path = await storage.save_weekly_review(user_id, week_label, weekly_text)
+        # 5. Save Weekly Review with Obsidian YAML frontmatter
+        obsidian_weekly = (
+            f"---\n"
+            f"user_id: {user_id}\n"
+            f"week: {week_label}\n"
+            f"type: weekly-review\n"
+            f"tags: [review, weekly, strategy]\n"
+            f"---\n\n"
+            f"{weekly_text}\n"
+        )
+        saved_path = await storage.save_weekly_review(user_id, week_label, obsidian_weekly)
 
         # 6. Automatically evolve L3 Memory Profile
         try:

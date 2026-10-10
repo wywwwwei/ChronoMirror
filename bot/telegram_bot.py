@@ -266,8 +266,7 @@ async def review_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await status_msg.delete()
-    header = "✅ 【日复盘已生成并已归档】\n\n"
-    await send_long_message(update, header + review_text)
+    await send_long_message(update, review_text)
 
 async def weekly_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ok, _ = await ensure_user_ready(update)
@@ -282,8 +281,7 @@ async def weekly_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await status_msg.delete()
-    header = "🏆 【周度战略复盘完成 & 长期画像已迭代】\n\n"
-    await send_long_message(update, header + weekly_text)
+    await send_long_message(update, weekly_text)
 
 # --- Message Handlers (Capture Layer) ---
 
@@ -378,13 +376,33 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception("图片解析失败")
         await status_msg.edit_text(f"❌ 图片解析失败: {str(e)}")
 
+from telegram.request import HTTPXRequest
+
+async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.warning(f"Telegram 网络或消息异常 (自动恢复重试): {context.error}")
+
 def build_telegram_app(scheduler=None):
     if not settings.TELEGRAM_BOT_TOKEN:
         raise ValueError("TELEGRAM_BOT_TOKEN 未配置，请在 .env 中设置")
 
-    builder = ApplicationBuilder().token(settings.TELEGRAM_BOT_TOKEN)
+    req_kwargs = {
+        "connect_timeout": 30.0,
+        "read_timeout": 35.0,
+        "write_timeout": 30.0,
+        "pool_timeout": 30.0,
+    }
     if settings.TELEGRAM_PROXY:
-        builder = builder.proxy(settings.TELEGRAM_PROXY)
+        req_kwargs["proxy"] = settings.TELEGRAM_PROXY
+
+    request = HTTPXRequest(connection_pool_size=16, media_write_timeout=60.0, **req_kwargs)
+    get_updates_request = HTTPXRequest(connection_pool_size=16, **req_kwargs)
+
+    builder = (
+        ApplicationBuilder()
+        .token(settings.TELEGRAM_BOT_TOKEN)
+        .request(request)
+        .get_updates_request(get_updates_request)
+    )
 
     if scheduler:
         async def on_post_init(application):
@@ -397,6 +415,7 @@ def build_telegram_app(scheduler=None):
         builder = builder.post_init(on_post_init).post_shutdown(on_post_shutdown)
 
     app = builder.build()
+    app.add_error_handler(global_error_handler)
 
     # Commands
     app.add_handler(CommandHandler("start", start_command))

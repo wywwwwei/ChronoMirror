@@ -37,8 +37,7 @@ class ReviewScheduler:
             try:
                 success, review_text, path = await review_engine.run_daily_review(user_id=user_id)
                 if success:
-                    msg = f"🌙 【每晚深度复盘与认知镜像】\n\n{review_text}"
-                    await self._send_to_user(user_id, msg)
+                    await self._send_to_user(user_id, review_text)
                 else:
                     logger.info(f"用户 {user_id} 每日复盘跳过: {review_text}")
             except Exception as e:
@@ -52,8 +51,7 @@ class ReviewScheduler:
             try:
                 success, weekly_text, path = await review_engine.run_weekly_review(user_id=user_id)
                 if success:
-                    msg = f"📊 【周日战略复盘与长期画像更新】\n\n{weekly_text}"
-                    await self._send_to_user(user_id, msg)
+                    await self._send_to_user(user_id, weekly_text)
                 else:
                     logger.info(f"用户 {user_id} 周复盘跳过: {weekly_text}")
             except Exception as e:

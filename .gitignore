@@ -21,11 +21,9 @@ vault/attachments/*
 vault/reviews/daily/*.md
 vault/reviews/weekly/*.md
 
-# 多用户隔离数据保护
-vault/users/*/logs/*.md
-vault/users/*/attachments/*
-vault/users/*/reviews/**/*.md
-vault/users/*/config.json
+# 多用户隔离数据保护 (彻底忽略所有用户文件夹)
+vault/users/*
+!vault/users/.gitkeep
 
 # 保留目录结构与占位符
 !.gitkeep

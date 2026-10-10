@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import os
 from pathlib import Path
@@ -20,12 +21,30 @@ class LLMService:
         return genai.Client(api_key=api_key)
 
     def get_openai_client(self, user_config: UserConfig):
-        from openai import OpenAI
+        from openai import AsyncOpenAI
         api_key = user_config.openai_api_key
         if not api_key:
             raise ValueError("未检测到 OpenAI API Key。请使用 `/setkey openai 你的Key` 进行设置。")
         base_url = user_config.openai_base_url
-        return OpenAI(api_key=api_key, base_url=base_url)
+        return AsyncOpenAI(api_key=api_key, base_url=base_url)
+
+    async def _call_gemini_with_retry(self, client, model: str, contents, retries: int = 3) -> str:
+        last_err = None
+        for attempt in range(retries):
+            try:
+                response = await client.aio.models.generate_content(
+                    model=model,
+                    contents=contents
+                )
+                return response.text.strip()
+            except Exception as e:
+                last_err = e
+                err_msg = str(e)
+                if ("503" in err_msg or "UNAVAILABLE" in err_msg or "429" in err_msg) and attempt < retries - 1:
+                    await asyncio.sleep(2 * (attempt + 1))
+                    continue
+                raise e
+        raise last_err
 
     async def describe_image(
         self,
@@ -41,15 +60,15 @@ class LLMService:
             from google.genai import types
             client = self.get_gemini_client(user_config)
             image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
-            response = client.models.generate_content(
+            return await self._call_gemini_with_retry(
+                client=client,
                 model=user_config.gemini_model,
                 contents=[image_part, prompt]
             )
-            return response.text.strip()
         else:
             client = self.get_openai_client(user_config)
             b64_image = base64.b64encode(image_bytes).decode("utf-8")
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=user_config.openai_vision_model,
                 messages=[
                     {
@@ -82,15 +101,15 @@ class LLMService:
                 audio_bytes = f.read()
             audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
             stt_prompt = "请将该语音消息完整转录为文字，保留口语真实原意，不要添加任何多余的开场白或解释。"
-            response = client.models.generate_content(
+            return await self._call_gemini_with_retry(
+                client=client,
                 model=user_config.gemini_model,
                 contents=[audio_part, stt_prompt]
             )
-            return response.text.strip()
         else:
             client = self.get_openai_client(user_config)
             with open(audio_path, "rb") as audio_file:
-                transcript = client.audio.transcriptions.create(
+                transcript = await client.audio.transcriptions.create(
                     model=user_config.openai_whisper_model,
                     file=audio_file
                 )
@@ -114,14 +133,14 @@ class LLMService:
         provider = user_config.active_provider.lower()
         if provider == "gemini":
             client = self.get_gemini_client(user_config)
-            response = client.models.generate_content(
+            return await self._call_gemini_with_retry(
+                client=client,
                 model=user_config.gemini_model,
                 contents=[system_prompt, user_message]
             )
-            return response.text.strip()
         else:
             client = self.get_openai_client(user_config)
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=user_config.openai_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -149,14 +168,14 @@ class LLMService:
         provider = user_config.active_provider.lower()
         if provider == "gemini":
             client = self.get_gemini_client(user_config)
-            response = client.models.generate_content(
+            return await self._call_gemini_with_retry(
+                client=client,
                 model=user_config.gemini_model,
                 contents=[system_prompt, user_message]
             )
-            return response.text.strip()
         else:
             client = self.get_openai_client(user_config)
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=user_config.openai_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -182,14 +201,14 @@ class LLMService:
         provider = user_config.active_provider.lower()
         if provider == "gemini":
             client = self.get_gemini_client(user_config)
-            response = client.models.generate_content(
+            return await self._call_gemini_with_retry(
+                client=client,
                 model=user_config.gemini_model,
                 contents=[MEMORY_UPDATE_SYSTEM_PROMPT, user_message]
             )
-            return response.text.strip()
         else:
             client = self.get_openai_client(user_config)
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=user_config.openai_model,
                 messages=[
                     {"role": "system", "content": MEMORY_UPDATE_SYSTEM_PROMPT},

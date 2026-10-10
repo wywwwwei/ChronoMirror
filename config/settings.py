@@ -84,6 +84,6 @@ class Settings(BaseSettings):
 settings = Settings()
 
 if settings.TELEGRAM_PROXY:
-    os.environ.setdefault("HTTP_PROXY", settings.TELEGRAM_PROXY)
-    os.environ.setdefault("HTTPS_PROXY", settings.TELEGRAM_PROXY)
+    for k in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"):
+        os.environ[k] = settings.TELEGRAM_PROXY
 

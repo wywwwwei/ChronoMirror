@@ -135,8 +135,13 @@ def main():
     scheduler = ReviewScheduler()
     telegram_app = build_telegram_app(scheduler=scheduler)
 
-    # Run polling
-    telegram_app.run_polling(drop_pending_updates=True)
+    # Run polling with auto-retry and pending update processing
+    telegram_app.run_polling(
+        drop_pending_updates=False,
+        timeout=20,
+        poll_interval=0.5,
+        bootstrap_retries=-1
+    )
 
 if __name__ == "__main__":
     main()
