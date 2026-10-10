@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # Gemini API Settings
     GEMINI_API_KEY: Optional[str] = Field(default=None, description="Google Gemini API Key")
-    GEMINI_MODEL: str = Field(default="gemini-2.5-flash", description="Gemini model for text & multi-modal processing")
+    GEMINI_MODEL: str = Field(default="gemini-3.8-flash", description="Gemini model for text & multi-modal processing")
 
     # OpenAI-compatible API Settings
     OPENAI_API_KEY: Optional[str] = Field(default=None, description="OpenAI or compatible provider API Key")
@@ -82,3 +82,8 @@ class Settings(BaseSettings):
         return self.memory_dir / "user_profile.md"
 
 settings = Settings()
+
+if settings.TELEGRAM_PROXY:
+    os.environ.setdefault("HTTP_PROXY", settings.TELEGRAM_PROXY)
+    os.environ.setdefault("HTTPS_PROXY", settings.TELEGRAM_PROXY)
+

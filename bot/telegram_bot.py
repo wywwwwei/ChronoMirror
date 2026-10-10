@@ -378,13 +378,23 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception("图片解析失败")
         await status_msg.edit_text(f"❌ 图片解析失败: {str(e)}")
 
-def build_telegram_app():
+def build_telegram_app(scheduler=None):
     if not settings.TELEGRAM_BOT_TOKEN:
         raise ValueError("TELEGRAM_BOT_TOKEN 未配置，请在 .env 中设置")
 
     builder = ApplicationBuilder().token(settings.TELEGRAM_BOT_TOKEN)
     if settings.TELEGRAM_PROXY:
         builder = builder.proxy(settings.TELEGRAM_PROXY)
+
+    if scheduler:
+        async def on_post_init(application):
+            scheduler.set_bot(application.bot)
+            scheduler.start()
+
+        async def on_post_shutdown(application):
+            scheduler.stop()
+
+        builder = builder.post_init(on_post_init).post_shutdown(on_post_shutdown)
 
     app = builder.build()
 

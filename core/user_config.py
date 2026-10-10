@@ -14,7 +14,7 @@ class UserConfig(BaseModel):
     
     # Gemini Configuration
     gemini_api_key: Optional[str] = None
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.8-flash"
     
     # OpenAI Configuration
     openai_api_key: Optional[str] = None
@@ -69,7 +69,15 @@ class UserConfigManager:
                 pass
         
         # New default user
-        return UserConfig(user_id=user_id)
+        cfg = UserConfig(user_id=user_id)
+        if settings.GEMINI_API_KEY and (not settings.allowed_user_ids_list or user_id in settings.allowed_user_ids_list):
+            cfg.gemini_api_key = settings.GEMINI_API_KEY
+            cfg.active_provider = "gemini"
+        elif settings.OPENAI_API_KEY and (not settings.allowed_user_ids_list or user_id in settings.allowed_user_ids_list):
+            cfg.openai_api_key = settings.OPENAI_API_KEY
+            cfg.openai_base_url = settings.OPENAI_BASE_URL
+            cfg.active_provider = "openai"
+        return cfg
 
     def save_user_config(self, config: UserConfig):
         config.updated_at = datetime.datetime.now().isoformat()

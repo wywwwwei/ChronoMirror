@@ -143,16 +143,11 @@ def main():
         sys.exit(1)
 
     logger.info("正在启动 ChronoMirror Telegram 机器人与多用户定时复盘服务...")
-    telegram_app = build_telegram_app()
+    scheduler = ReviewScheduler()
+    telegram_app = build_telegram_app(scheduler=scheduler)
 
-    # Setup Scheduler
-    scheduler = ReviewScheduler(bot=telegram_app.bot)
-    scheduler.start()
-
-    try:
-        telegram_app.run_polling(drop_pending_updates=True)
-    finally:
-        scheduler.stop()
+    # Run polling
+    telegram_app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
