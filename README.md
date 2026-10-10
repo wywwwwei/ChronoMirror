@@ -1,9 +1,9 @@
 <div align="center">
 
-# 🪞 GuanFu (观复) · ChronoMirror
+# 🪞 溯镜 · ChronoMirror
 ### AI 驱动的量化自我与认知复盘外脑 (Quantified Self & Cognitive Retro)
 
-> *“万物并作，吾以观复。” ——《道德经》*
+> *“溯源时空，鉴己之镜。”*
 
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
@@ -23,7 +23,7 @@
 1. **记录摩擦力太大**：每天面对空白文档，格式繁琐，坚持不了两周。
 2. **复盘变成自我欺骗**：人天生倾向于美化自己，逃避认知失调，难以跳出自我防御机制。
 
-**GuanFu (观复)** 的核心使命是：**以极低摩擦捕获你的全天真实生活流，并让 AI 作为一面冷峻、客观的镜像，代替你进行认知诊断、盲点解构与中长期复盘。**
+**ChronoMirror (溯镜)** 的核心使命是：**以极低摩擦捕获你的全天真实生活流，并让 AI 作为一面冷峻、客观的镜像，代替你进行认知诊断、盲点解构与中长期复盘。**
 
 ---
 
@@ -111,8 +111,8 @@ vault/
 ### 1. 克隆项目与安装环境
 
 ```bash
-git clone https://github.com/your-username/GuanFu.git
-cd GuanFu
+git clone https://github.com/wywwwwei/ChronoMirror.git
+cd ChronoMirror
 
 # 创建并激活虚拟环境
 python3 -m venv venv
@@ -202,10 +202,10 @@ docker compose up -d --build
 
 ```bash
 # 1. 将项目同步至服务器
-rsync -avz --exclude 'venv' ./ root@your_server_ip:/opt/GuanFu/
+rsync -avz --exclude 'venv' ./ root@your_server_ip:/opt/ChronoMirror/
 
 # 2. 在服务器上一键启动容器
-cd /opt/GuanFu
+cd /opt/ChronoMirror
 docker compose up -d --build
 
 # 3. 实时查看后台运行日志

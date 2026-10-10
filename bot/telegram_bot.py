@@ -84,7 +84,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_text = f"✅ 已就绪 (当前模型提供商: `{config.active_provider}`)" if has_key else "⚠️ **尚未绑定 API Key**（需先设置）"
 
     welcome_text = (
-        f"👋 你好，{user.first_name}！欢迎使用 **ChronoMirror (观复)** 个人认知复盘外脑。\n\n"
+        f"👋 你好，{user.first_name}！欢迎使用 **ChronoMirror (溯镜)** 个人认知复盘外脑。\n\n"
         f"🔑 **当前状态**：{status_text}\n\n"
         "💡 **核心功能**：\n"
         "- 💬 发送文字：记录闪念、想法、工作待办\n"

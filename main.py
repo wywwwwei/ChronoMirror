@@ -35,7 +35,7 @@ async def run_cli_mode():
         user_config_manager.save_user_config(config)
 
     print("\n" + "=" * 55)
-    print("🪞 欢迎进入 ChronoMirror (观复) 本地终端交互模式")
+    print("🪞 欢迎进入 ChronoMirror (溯镜) 本地终端交互模式")
     print("=" * 55)
     print(f"当前测试用户 ID: {CLI_USER_ID}")
     print(f"当前提供商: {config.active_provider} | 密钥状态: {'✅ 已配置' if config.has_valid_key() else '⚠️ 未配置 (请用 /setkey)'}")
