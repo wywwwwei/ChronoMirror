@@ -107,10 +107,14 @@ cp .env.example .env
 # 1. Telegram Bot Token (在 Telegram 搜索 @BotFather 发送 /newbot 获取)
 TELEGRAM_BOT_TOKEN="your_bot_token"
 
-# 2. 如果在大陆网络且需要本地代理 (如 Clash 默认 7890 端口):
+# 2. 访问白名单（自建自用强烈建议填写，避免机器人被陌生人使用）
+#    填你的数字 User ID = 私有模式；填 "*" = 公开模式；留空 = 公开（启动会告警）
+ALLOWED_USER_IDS="123456789"
+
+# 3. 如果在大陆网络且需要本地代理 (如 Clash 默认 7890 端口):
 # TELEGRAM_PROXY="http://127.0.0.1:7890"
 
-# 3. 大模型配置 (默认推荐 Gemini)
+# 4. 大模型配置 (默认推荐 Gemini)
 DEFAULT_LLM_PROVIDER="gemini"
 GEMINI_API_KEY="your_gemini_api_key"
 GEMINI_MODEL="gemini-2.5-flash"
@@ -147,6 +151,7 @@ docker compose up -d --build
 - **物理数据隔离**：每个用户的数据均独立保存在 `vault/users/<user_id>/` 下，彼此完全隔离，互不串扰。
 - **各自绑定 API Key**：未绑定 Key 的用户**无法调用 AI 记录与复盘功能**，保障系统资源的公平与安全。
 - **密钥聊天防泄露**：当用户在 Telegram 私聊发送 `/setkey` 时，机器人会自动删除该条包含明文密钥的消息，防止留存在聊天记录中。
+- **访问白名单**：`ALLOWED_USER_IDS` 控制谁能使用机器人；未配置即为公开模式，启动时会打印醒目警告。
 
 ---
 

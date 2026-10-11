@@ -6,6 +6,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# ALLOWED_USER_IDS 写 "*" 表示显式声明"公开模式"（对所有人开放）
+PUBLIC_MODE_SENTINEL = "*"
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),
@@ -15,7 +18,10 @@ class Settings(BaseSettings):
 
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: str = Field(default="", description="Telegram Bot Token from @BotFather")
-    ALLOWED_USER_IDS: str = Field(default="", description="Whitelisted Telegram user IDs (comma-separated)")
+    ALLOWED_USER_IDS: str = Field(
+        default="",
+        description="Whitelisted Telegram user IDs (comma-separated). '*' means explicit public mode."
+    )
     TELEGRAM_PROXY: Optional[str] = Field(default=None, description="HTTP/SOCKS5 proxy, e.g. http://127.0.0.1:7890")
 
     # LLM Provider Configuration
@@ -43,9 +49,29 @@ class Settings(BaseSettings):
 
     @property
     def allowed_user_ids_list(self) -> List[int]:
+        """白名单用户 ID 列表。空列表表示公开模式（见 is_public_mode）。"""
         if not self.ALLOWED_USER_IDS:
             return []
-        return [int(uid.strip()) for uid in str(self.ALLOWED_USER_IDS).split(",") if uid.strip().isdigit()]
+        raw = str(self.ALLOWED_USER_IDS)
+        if PUBLIC_MODE_SENTINEL in raw:
+            return []
+        return [int(uid.strip()) for uid in raw.split(",") if uid.strip().isdigit()]
+
+    @property
+    def has_explicit_public_mode(self) -> bool:
+        """是否用 ALLOWED_USER_IDS='*' 显式声明了公开模式"""
+        return PUBLIC_MODE_SENTINEL in str(self.ALLOWED_USER_IDS or "")
+
+    @property
+    def is_public_mode(self) -> bool:
+        return not self.allowed_user_ids_list
+
+    def is_user_allowed(self, user_id: int) -> bool:
+        """白名单校验的唯一入口。公开模式（未配置白名单或写 '*'）放行所有人。"""
+        allowed = self.allowed_user_ids_list
+        if not allowed:
+            return True
+        return user_id in allowed
 
     @property
     def logs_dir(self) -> Path:

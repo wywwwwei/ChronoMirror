@@ -19,10 +19,8 @@ from core.user_config import user_config_manager, UserConfig
 logger = logging.getLogger(__name__)
 
 def is_authorized(user_id: int) -> bool:
-    allowed = settings.allowed_user_ids_list
-    if not allowed:
-        return True
-    return user_id in allowed
+    """白名单校验统一委托给 settings 上的唯一实现，避免两处逻辑漂移。"""
+    return settings.is_user_allowed(user_id)
 
 async def send_long_message(update: Update, text: str, parse_mode: Optional[str] = None):
     """Splits text into chunks of <= 4000 characters to comply with Telegram limits"""
