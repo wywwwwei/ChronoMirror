@@ -130,7 +130,6 @@ class LLMService:
             await self._close_openai(client)
 
     async def _call_gemini_with_retry(self, client, model: str, contents, retries: int = 3) -> str:
-        last_err = None
         for attempt in range(retries):
             try:
                 response = await client.aio.models.generate_content(
@@ -139,13 +138,13 @@ class LLMService:
                 )
                 return response.text.strip()
             except Exception as e:
-                last_err = e
                 err_msg = str(e)
                 if ("503" in err_msg or "UNAVAILABLE" in err_msg or "429" in err_msg) and attempt < retries - 1:
                     await asyncio.sleep(2 * (attempt + 1))
                     continue
-                raise e
-        raise last_err
+                # 裸 raise 保留原始 traceback；`raise e` 会把 traceback 重置到
+                # 这一行，真正的出错位置（SDK 内部）在日志里就再也看不到了。
+                raise
 
     async def describe_image(
         self,
