@@ -30,6 +30,20 @@ from core.user_config import (
 
 logger = logging.getLogger(__name__)
 
+# 并发处理上限。
+#
+# 默认情况下 python-telegram-bot 是逐条处理更新的：一条语音要等下载 + 转写 +
+# 归档全部走完（数秒）才轮到下一条。用户连发三条时，第三条的响应时间就是三者之和，
+# 看上去就像"消息被吞了"。
+#
+# 这里刻意不给 True（无界并发）：捕获档走的是免费额度（Flash-Lite 约 500 RPD，
+# 且按 project 共享），无界并发会在用户手快连发时瞬间打出十几个请求，把配额和
+# 5 RPM 的限速撞满，反而制造新的失败。4 是"并发收益已经吃满、但冲不垮限速"的取值。
+#
+# 代价：并发度 > 1 时 PTB 用 create_task 派发更新，完成顺序不再等于到达顺序，
+# 同一秒内的几条日志在文件里的先后可能与发送顺序不一致（每条的时间戳仍准确）。
+MAX_CONCURRENT_UPDATES = 4
+
 def is_authorized(user_id: int) -> bool:
     """白名单校验统一委托给 settings 上的唯一实现，避免两处逻辑漂移。"""
     return settings.is_user_allowed(user_id)
@@ -588,6 +602,7 @@ def build_telegram_app(scheduler=None):
         .token(settings.TELEGRAM_BOT_TOKEN)
         .request(request)
         .get_updates_request(get_updates_request)
+        .concurrent_updates(MAX_CONCURRENT_UPDATES)
     )
 
     if scheduler:
