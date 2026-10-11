@@ -23,6 +23,8 @@ vault/logs/*.md
 vault/attachments/*
 vault/reviews/daily/*.md
 vault/reviews/weekly/*.md
+# L3 长期画像：比流水账更敏感（生理规律、认知偏差、习惯），必须一起挡住
+vault/memory/*.md
 
 # 多用户隔离数据保护 (彻底忽略所有用户文件夹)
 vault/users/*
