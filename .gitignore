@@ -7,7 +7,10 @@ __pycache__/
 *.pyd
 
 # Sensitive Environment Variables (Never commit!)
+# 覆盖所有变体（.env / .env.prod / .env.bak / .env.save ...），仅保留模板
 .env
+.env.*
+!.env.example
 *.env.local
 
 # IDE & OS
