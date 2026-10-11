@@ -1,4 +1,5 @@
 import datetime
+import re
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -6,12 +7,39 @@ from core.storage import storage
 from core.llm_service import llm
 from core.user_config import user_config_manager
 
+DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
 class ReviewEngine:
+    @staticmethod
+    def normalize_target_date(target_date: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+        """校验 /review 指令传入的日期，返回 (合法日期, 错误提示)。
+
+        这个值会直接被拼进文件路径，如果不校验，`/review ../../../README`
+        就能读到 vault 之外的文件。这里只放行严格的 YYYY-MM-DD。
+        """
+        if target_date is None:
+            return None, None
+        cleaned = target_date.strip()
+        if not cleaned:
+            return None, None
+        if not DATE_PATTERN.fullmatch(cleaned):
+            return None, "日期格式不正确，请使用 YYYY-MM-DD 格式（例如 `/review 2026-10-10`）。"
+        try:
+            datetime.date.fromisoformat(cleaned)
+        except ValueError:
+            return None, f"`{cleaned}` 不是一个真实存在的日期，请检查后重试。"
+        return cleaned, None
+
     async def run_daily_review(
         self,
         user_id: int,
         target_date: Optional[str] = None
     ) -> Tuple[bool, str, Optional[Path]]:
+        # 0. Validate the externally supplied date BEFORE it reaches the filesystem
+        target_date, date_error = self.normalize_target_date(target_date)
+        if date_error:
+            return False, date_error, None
+
         # 1. Check User Config & Key
         user_config = user_config_manager.get_user_config(user_id)
         if not user_config.has_valid_key():
@@ -49,7 +77,10 @@ class ReviewEngine:
             f"---\n\n"
             f"{review_text}\n"
         )
-        saved_path = await storage.save_daily_review(user_id, date_str, obsidian_content)
+        try:
+            saved_path = await storage.save_daily_review(user_id, date_str, obsidian_content)
+        except ValueError as e:
+            return False, f"复盘内容无法保存：{e}", None
         return True, review_text, saved_path
 
     async def run_weekly_review(self, user_id: int) -> Tuple[bool, str, Optional[Path]]:

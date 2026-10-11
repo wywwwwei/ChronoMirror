@@ -11,6 +11,20 @@ class VaultStorage:
         self.users_base_dir = settings.VAULT_DIR / "users"
         self.users_base_dir.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _safe_file_path(directory: Path, name: str, suffix: str) -> Path:
+        """把外部来源的 name 拼成文件名时的兜底防线。
+
+        name 可能来自 Telegram 指令（如 /review 2026-10-10），其中可能包含
+        "../" 或绝对路径。上游已经做了格式校验，这里再做一次物理包含性检查：
+        解析后的真实路径必须仍在目标目录内，否则拒绝。
+        """
+        base = directory.resolve()
+        candidate = (base / f"{name}{suffix}").resolve()
+        if not candidate.is_relative_to(base):
+            raise ValueError(f"非法的文件名参数: {name!r}")
+        return candidate
+
     def get_user_dir(self, user_id: int) -> Path:
         d = self.users_base_dir / str(user_id)
         d.mkdir(parents=True, exist_ok=True)
@@ -82,7 +96,7 @@ class VaultStorage:
         week_str = now.strftime("%Y-W%W")
 
         logs_dir = self.get_user_logs_dir(user_id)
-        file_path = logs_dir / f"{date_str}.md"
+        file_path = self._safe_file_path(logs_dir, date_str, ".md")
         is_new = not file_path.exists()
 
         entry_lines = []
@@ -112,20 +126,26 @@ class VaultStorage:
         return file_path
 
     async def get_daily_log(self, user_id: int, date_str: str) -> Optional[str]:
-        file_path = self.get_user_logs_dir(user_id) / f"{date_str}.md"
+        try:
+            file_path = self._safe_file_path(self.get_user_logs_dir(user_id), date_str, ".md")
+        except ValueError:
+            return None
         if not file_path.exists():
             return None
         async with aiofiles.open(file_path, mode="r", encoding="utf-8") as f:
             return await f.read()
 
     async def save_daily_review(self, user_id: int, date_str: str, content: str) -> Path:
-        file_path = self.get_user_daily_reviews_dir(user_id) / f"{date_str}.md"
+        file_path = self._safe_file_path(self.get_user_daily_reviews_dir(user_id), date_str, ".md")
         async with aiofiles.open(file_path, mode="w", encoding="utf-8") as f:
             await f.write(content)
         return file_path
 
     async def get_daily_review(self, user_id: int, date_str: str) -> Optional[str]:
-        file_path = self.get_user_daily_reviews_dir(user_id) / f"{date_str}.md"
+        try:
+            file_path = self._safe_file_path(self.get_user_daily_reviews_dir(user_id), date_str, ".md")
+        except ValueError:
+            return None
         if not file_path.exists():
             return None
         async with aiofiles.open(file_path, mode="r", encoding="utf-8") as f:
@@ -143,7 +163,7 @@ class VaultStorage:
         return reviews
 
     async def save_weekly_review(self, user_id: int, week_label: str, content: str) -> Path:
-        file_path = self.get_user_weekly_reviews_dir(user_id) / f"{week_label}.md"
+        file_path = self._safe_file_path(self.get_user_weekly_reviews_dir(user_id), week_label, ".md")
         async with aiofiles.open(file_path, mode="w", encoding="utf-8") as f:
             await f.write(content)
         return file_path
