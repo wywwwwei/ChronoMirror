@@ -158,8 +158,18 @@ def describe_llm_error(err: Exception, action: str = "调用 AI 服务") -> str:
     )
 
 
-def log_llm_error(err: Exception, context: str = "", user_id: Optional[int] = None) -> None:
-    """把脱敏后的原文写进服务端日志。用户看到的提示由 describe_llm_error 负责。"""
+def log_llm_error(
+    err: Exception,
+    context: str = "",
+    user_id: Optional[int] = None,
+    update_id: Optional[int] = None,
+) -> None:
+    """把脱敏后的原文写进服务端日志。用户看到的提示由 describe_llm_error 负责。
+
+    update_id 是可选的，但传上来才有用：失败日志和处理器入口的"收到 X"两行
+    靠它对齐，否则同一个人连发几条时看不出是哪一条炸了。
+    """
     where = f"[{context}]" if context else ""
     who = f" user={user_id}" if user_id is not None else ""
-    logger.error(f"{where}{who} {type(err).__name__}: {redact_secrets(str(err))}")
+    which = f" update={update_id}" if update_id is not None else ""
+    logger.error(f"{where}{who}{which} {type(err).__name__}: {redact_secrets(str(err))}")

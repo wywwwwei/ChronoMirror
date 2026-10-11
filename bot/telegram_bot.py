@@ -44,6 +44,18 @@ logger = logging.getLogger(__name__)
 # 同一秒内的几条日志在文件里的先后可能与发送顺序不一致（每条的时间戳仍准确）。
 MAX_CONCURRENT_UPDATES = 4
 
+def _update_ref(update: Update) -> str:
+    """日志里标识"这是哪一条更新、谁发的"。
+
+    排查"吞消息"时只有 user_id 不够用：同一个人连发三条，日志里三行长得一模一样，
+    分不清丢的是第几条。update_id 是 Telegram 给每条更新的单调递增编号，带上它
+    就能把"收到"和"归档成功"两行对上，也能和 getUpdates 的抓取顺序对齐。
+
+    注意：日志里只出现编号和长度，绝不出现日记正文——那是用户的隐私内容。
+    """
+    user = update.effective_user
+    return f"update={update.update_id} user={user.id if user else '未知'}"
+
 def is_authorized(user_id: int) -> bool:
     """白名单校验统一委托给 settings 上的唯一实现，避免两处逻辑漂移。"""
     return settings.is_user_allowed(user_id)
@@ -67,10 +79,12 @@ async def ensure_user_ready(update: Update) -> Tuple[bool, Optional[UserConfig]]
     """Checks whitelist and whether user has configured a valid API Key"""
     user = update.effective_user
     if not user:
+        logger.warning(f"{_update_ref(update)} 缺少 effective_user，跳过")
         return False, None
 
     # 1. Whitelist Check (if configured)
     if not is_authorized(user.id):
+        logger.warning(f"{_update_ref(update)} 不在白名单，跳过")
         await update.effective_message.reply_text(
             f"⛔ 未授权访问。\n你的 Telegram User ID 为: `{user.id}`\n此机器人仅供授权白名单使用。",
             parse_mode="Markdown"
@@ -80,6 +94,7 @@ async def ensure_user_ready(update: Update) -> Tuple[bool, Optional[UserConfig]]
     # 2. Key Check（个人 Key 优先，私有白名单模式下可回落到 .env 全局 Key）
     config = user_config_manager.resolve_config(user.id)
     if not config.has_valid_key():
+        logger.info(f"{_update_ref(update)} 未绑定有效 Key，跳过")
         await update.effective_message.reply_text(
             "⚠️ **你尚未绑定有效的 AI API Key，暂时无法使用记录与复盘功能。**\n\n"
             "请先在私聊中发送以下指令完成绑定：\n\n"
@@ -480,20 +495,28 @@ async def weekly_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Message Handlers (Capture Layer) ---
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ref = _update_ref(update)
+    text = update.effective_message.text or ""
+    logger.info(f"{ref} 收到文字 ({len(text)} 字)")
+
     ok, _ = await ensure_user_ready(update)
     if not ok:
         return
 
     user_id = update.effective_user.id
-    text = update.effective_message.text
     now = settings.now()
     time_str = now.strftime("%H:%M:%S")
 
     await storage.append_log(user_id=user_id, content=text, tag="文字记录", dt=now)
+    logger.info(f"{ref} 文字已归档")
+
     preview = text if len(text) < 30 else text[:27] + "..."
     await update.effective_message.reply_text(f"✅ 已记下 [{time_str}]: {preview}")
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ref = _update_ref(update)
+    logger.info(f"{ref} 收到语音")
+
     ok, user_config = await ensure_user_ready(update)
     if not ok:
         return
@@ -521,13 +544,17 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Append to log
         log_entry = f"语音转写：{transcript}"
         await storage.append_log(user_id=user_id, content=log_entry, tag="语音记录", dt=now, attachment_rel_path=rel_path)
+        logger.info(f"{ref} 语音已归档 {rel_path}")
 
         await status_msg.edit_text(f"🎙️ 已转写归档 [{now.strftime('%H:%M:%S')}]:\n\n{transcript}")
     except Exception as e:
-        log_llm_error(e, context="voice", user_id=user_id)
+        log_llm_error(e, context="voice", user_id=user_id, update_id=update.update_id)
         await status_msg.edit_text(f"❌ 语音处理失败。\n{describe_llm_error(e, '转写语音')}")
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ref = _update_ref(update)
+    logger.info(f"{ref} 收到照片")
+
     ok, user_config = await ensure_user_ready(update)
     if not ok:
         return
@@ -564,10 +591,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_entry = "\n".join(entry_parts)
 
         await storage.append_log(user_id=user_id, content=log_entry, tag="视觉记录", dt=now, attachment_rel_path=rel_path)
+        logger.info(f"{ref} 照片已归档 {rel_path}")
 
         await status_msg.edit_text(f"📸 影像特征已归档 [{now.strftime('%H:%M:%S')}]:\n\n{description}")
     except Exception as e:
-        log_llm_error(e, context="photo", user_id=user_id)
+        log_llm_error(e, context="photo", user_id=user_id, update_id=update.update_id)
         await status_msg.edit_text(f"❌ 图片解析失败。\n{describe_llm_error(e, '分析照片')}")
 
 from telegram.request import HTTPXRequest
