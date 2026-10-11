@@ -1,8 +1,10 @@
 import asyncio
 import base64
+import logging
 import os
+from collections import OrderedDict
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
 from config.settings import settings
 from core.user_config import UserConfig
@@ -12,6 +14,12 @@ from core.prompts import (
     WEEKLY_REVIEW_SYSTEM_PROMPT,
     MEMORY_UPDATE_SYSTEM_PROMPT,
 )
+
+logger = logging.getLogger(__name__)
+
+# 客户端缓存上限。每个条目都持有一个连接池；用户改了 Key 会留下旧条目，
+# 所以需要上限 + 淘汰，避免长时间运行的进程把连接越攒越多。
+MAX_CACHED_CLIENTS = 32
 
 # 模型字段为空表示"跟随 .env 默认值"（见 UserConfigManager.resolve_config）。
 # 这里再兜一层，避免调用方传入未解析的配置时把 None 当成模型名发给 API。
@@ -28,20 +36,98 @@ def _openai_whisper_model(cfg: UserConfig) -> str:
     return cfg.openai_whisper_model or settings.OPENAI_WHISPER_MODEL
 
 class LLMService:
-    def get_gemini_client(self, user_config: UserConfig):
-        from google import genai
-        api_key = user_config.gemini_api_key
-        if not api_key:
-            raise ValueError("未检测到 Gemini API Key。请使用 `/setkey gemini 你的Key` 进行设置。")
-        return genai.Client(api_key=api_key)
+    """按 Key 复用 LLM 客户端。
 
-    def get_openai_client(self, user_config: UserConfig):
+    之前每次调用都 new 一个客户端且从不关闭：每个客户端都带一个 httpx 连接池，
+    在长时间运行的机器人进程里等于每次消息都漏一个连接池（连接、socket、
+    TLS 会话都不释放）。现在按 (api_key[, base_url]) 缓存复用，超出上限时
+    淘汰并关闭最久未用的，进程退出时统一 aclose()。
+
+    缓存键里含明文 Key，仅存在于内存，绝不写日志。
+    """
+
+    def __init__(self):
+        self._gemini_clients: "OrderedDict[str, object]" = OrderedDict()
+        self._openai_clients: "OrderedDict[Tuple[str, Optional[str]], object]" = OrderedDict()
+        self._lock = asyncio.Lock()
+
+    @staticmethod
+    def _require_key(api_key: Optional[str], provider: str) -> str:
+        key = (api_key or "").strip()
+        if not key:
+            raise ValueError(f"未检测到 {provider} API Key。请使用 `/setkey {provider.lower()} 你的Key` 进行设置。")
+        return key
+
+    async def _get_gemini_client(self, user_config: UserConfig):
+        from google import genai
+        api_key = self._require_key(user_config.gemini_api_key, "Gemini")
+        async with self._lock:
+            client = self._gemini_clients.get(api_key)
+            if client is None:
+                client = genai.Client(api_key=api_key)
+                self._gemini_clients[api_key] = client
+            self._gemini_clients.move_to_end(api_key)
+            stale = self._evict_over_limit(self._gemini_clients)
+        for old in stale:
+            await self._close_gemini(old)
+        return client
+
+    async def _get_openai_client(self, user_config: UserConfig):
         from openai import AsyncOpenAI
-        api_key = user_config.openai_api_key
-        if not api_key:
-            raise ValueError("未检测到 OpenAI API Key。请使用 `/setkey openai 你的Key` 进行设置。")
-        base_url = user_config.openai_base_url
-        return AsyncOpenAI(api_key=api_key, base_url=base_url)
+        api_key = self._require_key(user_config.openai_api_key, "OpenAI")
+        base_url = user_config.openai_base_url or None
+        cache_key = (api_key, base_url)
+        async with self._lock:
+            client = self._openai_clients.get(cache_key)
+            if client is None:
+                client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+                self._openai_clients[cache_key] = client
+            self._openai_clients.move_to_end(cache_key)
+            stale = self._evict_over_limit(self._openai_clients)
+        for old in stale:
+            await self._close_openai(old)
+        return client
+
+    @staticmethod
+    def _evict_over_limit(cache: OrderedDict) -> List[object]:
+        stale = []
+        while len(cache) > MAX_CACHED_CLIENTS:
+            _, old = cache.popitem(last=False)
+            stale.append(old)
+        return stale
+
+    @staticmethod
+    async def _close_gemini(client) -> None:
+        # genai.Client 的同步与异步 api_client 是两套连接池，都要收
+        try:
+            client.close()
+        except Exception as e:
+            logger.warning(f"关闭 Gemini 同步客户端失败: {e}")
+        aio = getattr(client, "aio", None)
+        if aio is not None:
+            try:
+                await aio.aclose()
+            except Exception as e:
+                logger.warning(f"关闭 Gemini 异步客户端失败: {e}")
+
+    @staticmethod
+    async def _close_openai(client) -> None:
+        try:
+            await client.close()
+        except Exception as e:
+            logger.warning(f"关闭 OpenAI 客户端失败: {e}")
+
+    async def aclose(self) -> None:
+        """关闭所有缓存客户端。在机器人停机 / 进程退出时调用。"""
+        async with self._lock:
+            gemini_clients = list(self._gemini_clients.values())
+            openai_clients = list(self._openai_clients.values())
+            self._gemini_clients.clear()
+            self._openai_clients.clear()
+        for client in gemini_clients:
+            await self._close_gemini(client)
+        for client in openai_clients:
+            await self._close_openai(client)
 
     async def _call_gemini_with_retry(self, client, model: str, contents, retries: int = 3) -> str:
         last_err = None
@@ -73,7 +159,7 @@ class LLMService:
 
         if provider == "gemini":
             from google.genai import types
-            client = self.get_gemini_client(user_config)
+            client = await self._get_gemini_client(user_config)
             image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
             return await self._call_gemini_with_retry(
                 client=client,
@@ -81,7 +167,7 @@ class LLMService:
                 contents=[image_part, prompt]
             )
         else:
-            client = self.get_openai_client(user_config)
+            client = await self._get_openai_client(user_config)
             b64_image = base64.b64encode(image_bytes).decode("utf-8")
             response = await client.chat.completions.create(
                 model=_openai_vision_model(user_config),
@@ -111,7 +197,7 @@ class LLMService:
 
         if provider == "gemini":
             from google.genai import types
-            client = self.get_gemini_client(user_config)
+            client = await self._get_gemini_client(user_config)
             with open(audio_path, "rb") as f:
                 audio_bytes = f.read()
             audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
@@ -122,7 +208,7 @@ class LLMService:
                 contents=[audio_part, stt_prompt]
             )
         else:
-            client = self.get_openai_client(user_config)
+            client = await self._get_openai_client(user_config)
             with open(audio_path, "rb") as audio_file:
                 transcript = await client.audio.transcriptions.create(
                     model=_openai_whisper_model(user_config),
@@ -147,14 +233,14 @@ class LLMService:
 """
         provider = user_config.active_provider.lower()
         if provider == "gemini":
-            client = self.get_gemini_client(user_config)
+            client = await self._get_gemini_client(user_config)
             return await self._call_gemini_with_retry(
                 client=client,
                 model=_gemini_model(user_config),
                 contents=[system_prompt, user_message]
             )
         else:
-            client = self.get_openai_client(user_config)
+            client = await self._get_openai_client(user_config)
             response = await client.chat.completions.create(
                 model=_openai_model(user_config),
                 messages=[
@@ -182,14 +268,14 @@ class LLMService:
 """
         provider = user_config.active_provider.lower()
         if provider == "gemini":
-            client = self.get_gemini_client(user_config)
+            client = await self._get_gemini_client(user_config)
             return await self._call_gemini_with_retry(
                 client=client,
                 model=_gemini_model(user_config),
                 contents=[system_prompt, user_message]
             )
         else:
-            client = self.get_openai_client(user_config)
+            client = await self._get_openai_client(user_config)
             response = await client.chat.completions.create(
                 model=_openai_model(user_config),
                 messages=[
@@ -215,14 +301,14 @@ class LLMService:
 """
         provider = user_config.active_provider.lower()
         if provider == "gemini":
-            client = self.get_gemini_client(user_config)
+            client = await self._get_gemini_client(user_config)
             return await self._call_gemini_with_retry(
                 client=client,
                 model=_gemini_model(user_config),
                 contents=[MEMORY_UPDATE_SYSTEM_PROMPT, user_message]
             )
         else:
-            client = self.get_openai_client(user_config)
+            client = await self._get_openai_client(user_config)
             response = await client.chat.completions.create(
                 model=_openai_model(user_config),
                 messages=[

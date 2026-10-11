@@ -416,10 +416,15 @@ def build_telegram_app(scheduler=None):
             scheduler.set_bot(application.bot)
             scheduler.start()
 
-        async def on_post_shutdown(application):
-            scheduler.stop()
+        builder = builder.post_init(on_post_init)
 
-        builder = builder.post_init(on_post_init).post_shutdown(on_post_shutdown)
+    async def on_post_shutdown(application):
+        """停机时释放所有长连接，避免进程退出前留下未关闭的连接池。"""
+        if scheduler:
+            scheduler.stop()
+        await llm.aclose()
+
+    builder = builder.post_shutdown(on_post_shutdown)
 
     app = builder.build()
     app.add_error_handler(global_error_handler)
