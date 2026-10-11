@@ -187,17 +187,37 @@ class LLMService:
                 )
                 await asyncio.sleep(delay)
 
-    async def _call_gemini_with_retry(self, client, model: str, contents, retries: int = MAX_RETRIES) -> str:
+    async def _call_gemini_with_retry(
+        self,
+        client,
+        model: str,
+        contents,
+        system_instruction: Optional[str] = None,
+        retries: int = MAX_RETRIES,
+    ) -> str:
         """Gemini 文本/多模态调用。两种提供商共用 _with_retry。"""
         return await self._with_retry(
             f"Gemini/{model}",
-            lambda: self._gemini_generate(client, model, contents),
+            lambda: self._gemini_generate(client, model, contents, system_instruction),
             retries=retries,
         )
 
     @staticmethod
-    async def _gemini_generate(client, model: str, contents) -> str:
-        response = await client.aio.models.generate_content(model=model, contents=contents)
+    async def _gemini_generate(client, model: str, contents, system_instruction: Optional[str] = None) -> str:
+        """system_instruction 必须走 GenerateContentConfig。
+
+        之前是把系统提示词塞进 contents 的第一项，那样它只是一条普通的
+        user turn：模型不会按 system 角色对待它（拿到的是两条连续 user 消息），
+        角色约束与指令优先级都被削弱，还白白多消耗一轮上下文。
+        """
+        config = None
+        if system_instruction:
+            from google.genai import types
+            config = types.GenerateContentConfig(system_instruction=system_instruction)
+
+        response = await client.aio.models.generate_content(
+            model=model, contents=contents, config=config
+        )
         return response.text.strip()
 
     @staticmethod
@@ -308,7 +328,8 @@ class LLMService:
             return await self._call_gemini_with_retry(
                 client=client,
                 model=_gemini_model(user_config),
-                contents=[system_prompt, user_message]
+                contents=user_message,
+                system_instruction=system_prompt,
             )
         else:
             client = await self._get_openai_client(user_config)
@@ -346,7 +367,8 @@ class LLMService:
             return await self._call_gemini_with_retry(
                 client=client,
                 model=_gemini_model(user_config),
-                contents=[system_prompt, user_message]
+                contents=user_message,
+                system_instruction=system_prompt,
             )
         else:
             client = await self._get_openai_client(user_config)
@@ -382,7 +404,8 @@ class LLMService:
             return await self._call_gemini_with_retry(
                 client=client,
                 model=_gemini_model(user_config),
-                contents=[MEMORY_UPDATE_SYSTEM_PROMPT, user_message]
+                contents=user_message,
+                system_instruction=MEMORY_UPDATE_SYSTEM_PROMPT,
             )
         else:
             client = await self._get_openai_client(user_config)
