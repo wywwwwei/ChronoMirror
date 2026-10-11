@@ -8,7 +8,7 @@
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
 [![Telegram Bot](https://img.shields.io/badge/Telegram_Bot-@ChronoMirrorBot-2CA5E0.svg?logo=telegram&logoColor=white)](https://t.me/ChronoMirrorBot)
-[![Google Gemini](https://img.shields.io/badge/LLM-Gemini_2.5-4E75F6.svg?logo=google&logoColor=white)](https://ai.google.dev/)
+[![Google Gemini](https://img.shields.io/badge/LLM-Gemini_3.x-4E75F6.svg?logo=google&logoColor=white)](https://ai.google.dev/)
 [![OpenAI Compatible](https://img.shields.io/badge/LLM-OpenAI_Compatible-412991.svg?logo=openai&logoColor=white)](https://platform.openai.com/)
 [![Obsidian Ready](https://img.shields.io/badge/Storage-Obsidian_Vault-7C3AED.svg?logo=obsidian&logoColor=white)](https://obsidian.md/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -38,9 +38,10 @@
 
 1. **进入对话**：在 Telegram 搜索并私聊 [**@ChronoMirrorBot**](https://t.me/ChronoMirrorBot)
 2. **激活会话**：发送 `/start` 查看功能指引
-3. **绑定个人密钥**：发送你的 API Key（**二选一**）：
-   - 绑定 Gemini：`/setkey gemini 你的GeminiKey`
-   - 绑定 OpenAI / DeepSeek：`/setkey openai 你的Key [可选BaseURL]`
+3. **绑定个人密钥**：发送你的 API Key：
+   - 绑定 Gemini：`/setkey gemini 你的GeminiKey`（**推荐**，语音与照片依赖它的多模态能力）
+   - 绑定 OpenAI 官方：`/setkey openai 你的Key`
+   - ⚠️ **DeepSeek 及任何纯文本服务用不了**，原因见 [模型能力要求与兼容性说明](#-模型能力要求与兼容性说明)
 4. **即刻开始使用**：随时发语音、文字或生活照片，每晚 23:00 系统将自动为你定向推送深度日复盘！
 
 > *注：系统已内置多用户物理隔离，每位用户的数据完全独立保密；发送包含密钥的消息会被机器人自动删除销毁，确保隐私无虞。*
@@ -51,8 +52,9 @@
 
 - **全平台随时采集**：通过 Telegram Bot 发送语音、拍照、文字，无网络穿透负担，开机即用。
 - **双大模型引擎自由切换**：
-  - 原生支持 **Google Gemini API**（Gemini 2.5 Flash / 2.0，多模态性价比首选）。
-  - 原生支持 **OpenAI 兼容接口**（可自由接入 DeepSeek、GPT-4o、硅基流动、OneAPI 等）。
+  - 原生支持 **Google Gemini API**（多模态性价比首选，**默认推荐**）。
+  - 支持 **OpenAI 兼容接口**，但**要求该服务同时具备音频转写与图片理解能力**（如 OpenAI 官方）。
+    只提供文本对话的服务（**DeepSeek**、多数纯文本中转）**无法完整使用本机器人** —— 详见 [模型能力要求与兼容性说明](#-模型能力要求与兼容性说明)。
 - **长期个人画像动态进化 (L3 Memory)**：
   - AI 持续在 `vault/memory/user_profile.md` 中记录并迭代关于你的身体规律、认知偏差与高 ROI 行为习惯。
 - **本地优先与隐私保护**：
@@ -61,6 +63,77 @@
 - **定时自动推送**：
   - 每晚 23:00 自动分析今日日志，生成深度日复盘并回推到手机。
   - 每周日 22:00 自动汇总过去 7 天，生成宏观周度战略分析报告。
+
+---
+
+## ⚠️ 模型能力要求与兼容性说明
+
+本项目对 LLM 的调用分三类，对接口能力的要求完全不同：
+
+| 用途 | 需要的能力 | 代码位置 |
+| :--- | :--- | :--- |
+| 文字归档、日/周复盘、L3 画像进化 | 文本对话 (`chat/completions`) | `generate_daily_review` / `generate_weekly_review` / `evolve_memory` |
+| 语音消息 → 文字 | 音频转写端点 | `transcribe_audio()` 的 OpenAI 分支调用 `client.audio.transcriptions.create()` |
+| 照片 → 饮食/穿搭/场景特征 | 图片输入（多模态视觉） | `describe_image()` 的 OpenAI 分支发送 `image_url` 的 data URI |
+
+### 为什么 DeepSeek 用不了
+
+**DeepSeek 的开放平台只提供文本对话接口。** 它没有 OpenAI 的 `/audio/transcriptions` 语音转写端点，也不接受图片输入。
+
+所以即使 `/setkey openai <你的Key> https://api.deepseek.com/v1` 能绑定成功、`/status` 也显示正常，实际使用时是这样：
+
+| 操作 | 结果 |
+| :--- | :--- |
+| 发送语音 | ❌ 转写请求打向一个不存在的端点，直接报错 |
+| 发送照片 | ❌ 视觉请求携带图片数据，服务端无法处理，直接报错 |
+| 发送文字、`/review`、`/weekly` | ✅ 可用（纯文本路径） |
+
+而本项目的核心价值是「以极低摩擦捕获全天生活流」，录入方式主要就是**语音和照片**。因此 **DeepSeek 无法完整使用本机器人**。
+
+> 早期版本的 README 曾把 DeepSeek 列为可直接接入的推荐项，那是错的，现已更正。
+
+### 哪些服务可以用
+
+需要**同时**具备文本、音频转写、图片理解三种能力的兼容服务：
+
+- ✅ **Google Gemini** —— 默认推荐，一次绑定三种能力齐备。
+- ✅ **OpenAI 官方** —— `gpt-4o` 系模型 + `whisper-1`。
+- ⚠️ **聚合平台 / 中转服务** —— 取决于其上游是否真的转发了音频与视觉请求，需自行验证（发一条语音试一下最快）。
+- ❌ **纯文本服务**（DeepSeek、多数纯文本中转）—— 不可用。
+
+---
+
+## 🧠 模型档位与免费额度
+
+项目对 LLM 的调用分成**两类完全不同的工作负载**，默认给它们配了不同的模型档位：
+
+| 档位 | 用途 | 调用频率 | 默认模型 |
+| :--- | :--- | :--- | :--- |
+| **capture** | 语音转写、照片描述 | 每条语音/照片各一次，**高频** | `gemini-3.5-flash-lite` |
+| **review** | 日复盘、周复盘、L3 画像进化 | 约每天 1 次 + 每周 1 次，**低频** | `gemini-3.8-flash` |
+
+**为什么要分开**：Gemini 免费档的每日额度是**按 project 共享的，不按 Key**（Flash 约 20 次/天，
+Flash-Lite 约 500 次/天）。本项目是多人共用一个部署，采集用强档的话几个人发几条语音就打爆额度，
+而复盘每天/每周只跑一两次，用强档完全放得下。所以**采集走便宜档、复盘保留强档**。
+
+**你不需要做任何配置**：`/setkey gemini 你的Key` 之后两个档位就自动按上表的默认值工作。
+想调整再用 `/setmodel`：
+
+```
+/setmodel                              查看当前档位与来源（个人设置 / 跟随 .env）
+/setmodel capture gemini-3.5-flash     把采集档换成别的模型
+/setmodel reset capture                恢复跟随默认
+/setmodel reset all                    全部恢复默认
+```
+
+档位是**按提供商分组**的，只会显示你绑过 Key 的那一家，所以不会有"要同时配好几家"的情况：
+
+- 只有 Gemini Key → 看到 `capture`、`review`
+- 只有 OpenAI Key → 看到 `chat`（文本复盘 + 照片描述）、`whisper`（语音转写）
+
+> **⚠️ 免费档的隐私代价**：Gemini 免费档的输入内容会被 Google 用于改进其产品，且**没有关闭开关**；
+> 付费档（在 Google Cloud 绑定结算账号后）才有 "content not used to improve our products" 的保证。
+> 本项目记录的是个人日记，如果你在意这一点，请为项目绑定结算账号走付费档，或改用 OpenAI 官方。
 
 ---
 
@@ -117,13 +190,20 @@ ALLOWED_USER_IDS="123456789"
 # 4. 大模型配置 (默认推荐 Gemini)
 DEFAULT_LLM_PROVIDER="gemini"
 GEMINI_API_KEY="your_gemini_api_key"
-GEMINI_MODEL="gemini-3.8-flash"
+# 采集档（高频，走便宜、额度宽的档位）
+GEMINI_CAPTURE_MODEL="gemini-3.5-flash-lite"
+# 复盘档（每天/每周一次，保留强档）
+GEMINI_REVIEW_MODEL="gemini-3.8-flash"
 
-# 若后续使用 OpenAI / DeepSeek / 硅基流动:
+# 若后续使用 OpenAI 官方（须同时支持语音转写与图片理解）:
 # DEFAULT_LLM_PROVIDER="openai"
 # OPENAI_API_KEY="your_api_key"
-# OPENAI_BASE_URL="https://api.deepseek.com/v1"
-# OPENAI_MODEL="deepseek-chat"
+# OPENAI_MODEL="gpt-4o-mini"
+# OPENAI_VISION_MODEL="gpt-4o-mini"
+# OPENAI_WHISPER_MODEL="whisper-1"
+#
+# ⚠️ 不要填 DeepSeek 或其它纯文本服务：
+#    它们没有音频转写端点、也不接受图片输入，绑定后语音与照片消息会直接失败。
 ```
 
 > **⚠️ 关于全局 Key 与白名单的关系**：`.env` 里的 `GEMINI_API_KEY` / `OPENAI_API_KEY` 只在**私有模式（配置了 `ALLOWED_USER_IDS`）**下作为白名单用户的兜底 Key 生效；公开模式下不会兜底，每位用户都必须自行 `/setkey`，以免陌生用户消耗你的 API 额度。
@@ -163,9 +243,10 @@ docker compose up -d --build
 
 | 指令 / 动作 | 格式示例与说明 |
 | :--- | :--- |
-| **`/setkey`** | **绑定/修改个人的 AI API Key**：<br>• 绑定 Gemini: `/setkey gemini 你的GeminiKey`<br>• 绑定 OpenAI: `/setkey openai 你的OpenAIKey`<br>• 绑定第三方 (如 DeepSeek): `/setkey openai 你的Key https://api.deepseek.com/v1` |
+| **`/setkey`** | **绑定/修改个人的 AI API Key**：<br>• 绑定 Gemini: `/setkey gemini 你的GeminiKey`<br>• 绑定 OpenAI 官方: `/setkey openai 你的OpenAIKey`<br>• 第三方兼容服务: `/setkey openai 你的Key https://…/v1`（**该服务必须同时支持音频转写与图片理解**；DeepSeek 不满足，请勿使用） |
 | **`/switch`** | **在已配置的 Gemini 与 OpenAI 之间快速切换**：`/switch gemini` 或 `/switch openai` |
-| **`/status`** | 查看当前生效的模型提供商、掩码 Key、Base URL 及账号就绪状态 |
+| **`/setmodel`** | **查看/调整各档位使用的模型**：<br>• `/setmodel` 查看当前档位与来源<br>• `/setmodel capture gemini-3.5-flash` 设置某档位<br>• `/setmodel reset <档位\|all>` 恢复跟随默认<br>（不设置时自动使用 `.env` 默认值，**绑完 Key 即可用，无需配置**；详见 [模型档位与免费额度](#-模型档位与免费额度)） |
+| **`/status`** | 查看当前生效的模型提供商、掩码 Key、Base URL、各档位模型及账号就绪状态 |
 | **发送文本消息** | 自动记录时间戳并追加到个人今日时间流日志（L0） |
 | **发送语音消息** | 自动识别转写为文字并按时间戳归档 |
 | **发送照片 (可带附言)** | 视觉大模型即时提取饮食热量、穿搭适宜度或场景文字记录（节省 90% Token） |
