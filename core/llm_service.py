@@ -21,6 +21,44 @@ logger = logging.getLogger(__name__)
 # 所以需要上限 + 淘汰，避免长时间运行的进程把连接越攒越多。
 MAX_CACHED_CLIENTS = 32
 
+# --- 重试策略（Gemini 与 OpenAI 共用，避免两条路行为不一致）---
+MAX_RETRIES = 3
+BASE_BACKOFF_SECONDS = 2.0
+# 服务端过载/限流/网关抖动的状态码
+RETRYABLE_STATUS_CODES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
+# 拿不到结构化状态码时，退化为文本匹配（两个 SDK 的报错格式不同）
+RETRYABLE_MARKERS = (
+    "429", "500", "502", "503", "504",
+    "unavailable", "resource_exhausted", "resource exhausted",
+    "overloaded", "rate limit", "rate_limit",
+    "timed out", "timeout", "connection error", "connection reset",
+    "temporarily", "try again",
+)
+
+
+def _status_code_of(err: Exception):
+    """尽力从两个 SDK 的异常对象里挖出 HTTP 状态码"""
+    for attr in ("status_code", "http_status", "code"):
+        value = getattr(err, attr, None)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    response = getattr(err, "response", None)
+    status = getattr(response, "status_code", None)
+    if isinstance(status, int):
+        return status
+    return None
+
+
+def is_retryable_error(err: Exception) -> bool:
+    """判断是否值得重试。只对"服务端/网络临时故障"重试，
+    参数错误、鉴权失败、额度耗尽等重试多少次都一样，必须立刻上抛。"""
+    status = _status_code_of(err)
+    if status is not None:
+        return status in RETRYABLE_STATUS_CODES
+
+    text = str(err).lower()
+    return any(marker in text for marker in RETRYABLE_MARKERS)
+
 # 模型字段为空表示"跟随 .env 默认值"（见 UserConfigManager.resolve_config）。
 # 这里再兜一层，避免调用方传入未解析的配置时把 None 当成模型名发给 API。
 def _gemini_model(cfg: UserConfig) -> str:
@@ -129,22 +167,45 @@ class LLMService:
         for client in openai_clients:
             await self._close_openai(client)
 
-    async def _call_gemini_with_retry(self, client, model: str, contents, retries: int = 3) -> str:
+    async def _with_retry(self, operation: str, call, retries: int = MAX_RETRIES):
+        """统一的重试入口：指数退避重试可恢复错误，其余立刻上抛。
+
+        operation 只用于日志，绝不能把 API Key 拼进去。
+        """
         for attempt in range(retries):
             try:
-                response = await client.aio.models.generate_content(
-                    model=model,
-                    contents=contents
-                )
-                return response.text.strip()
+                return await call()
             except Exception as e:
-                err_msg = str(e)
-                if ("503" in err_msg or "UNAVAILABLE" in err_msg or "429" in err_msg) and attempt < retries - 1:
-                    await asyncio.sleep(2 * (attempt + 1))
-                    continue
-                # 裸 raise 保留原始 traceback；`raise e` 会把 traceback 重置到
-                # 这一行，真正的出错位置（SDK 内部）在日志里就再也看不到了。
-                raise
+                if attempt >= retries - 1 or not is_retryable_error(e):
+                    # 裸 raise 保留原始 traceback；`raise e` 会把 traceback 重置到
+                    # 这一行，真正的出错位置（SDK 内部）在日志里就再也看不到了。
+                    raise
+                delay = BASE_BACKOFF_SECONDS * (2 ** attempt)
+                logger.warning(
+                    f"{operation} 第 {attempt + 1}/{retries} 次调用失败"
+                    f"（{type(e).__name__}），{delay:.0f}s 后重试: {e}"
+                )
+                await asyncio.sleep(delay)
+
+    async def _call_gemini_with_retry(self, client, model: str, contents, retries: int = MAX_RETRIES) -> str:
+        """Gemini 文本/多模态调用。两种提供商共用 _with_retry。"""
+        return await self._with_retry(
+            f"Gemini/{model}",
+            lambda: self._gemini_generate(client, model, contents),
+            retries=retries,
+        )
+
+    @staticmethod
+    async def _gemini_generate(client, model: str, contents) -> str:
+        response = await client.aio.models.generate_content(model=model, contents=contents)
+        return response.text.strip()
+
+    @staticmethod
+    async def _openai_complete(client, *, model: str, messages, **kwargs) -> str:
+        response = await client.chat.completions.create(
+            model=model, messages=messages, **kwargs
+        )
+        return response.choices[0].message.content.strip()
 
     async def describe_image(
         self,
@@ -168,23 +229,26 @@ class LLMService:
         else:
             client = await self._get_openai_client(user_config)
             b64_image = base64.b64encode(image_bytes).decode("utf-8")
-            response = await client.chat.completions.create(
-                model=_openai_vision_model(user_config),
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}
-                            }
-                        ]
-                    }
-                ],
-                max_tokens=300
+            return await self._with_retry(
+                f"OpenAI/{_openai_vision_model(user_config)}",
+                lambda: self._openai_complete(
+                    client,
+                    model=_openai_vision_model(user_config),
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}
+                                }
+                            ]
+                        }
+                    ],
+                    max_tokens=300
+                )
             )
-            return response.choices[0].message.content.strip()
 
     async def transcribe_audio(
         self,
@@ -208,12 +272,20 @@ class LLMService:
             )
         else:
             client = await self._get_openai_client(user_config)
-            with open(audio_path, "rb") as audio_file:
-                transcript = await client.audio.transcriptions.create(
-                    model=_openai_whisper_model(user_config),
-                    file=audio_file
-                )
-            return transcript.text.strip()
+
+            async def _transcribe():
+                # 每次重试都要把文件指针拨回开头，否则第二次上传的是空文件
+                with open(audio_path, "rb") as audio_file:
+                    transcript = await client.audio.transcriptions.create(
+                        model=_openai_whisper_model(user_config),
+                        file=audio_file
+                    )
+                return transcript.text.strip()
+
+            return await self._with_retry(
+                f"OpenAI/{_openai_whisper_model(user_config)}",
+                _transcribe
+            )
 
     async def generate_daily_review(
         self,
@@ -240,15 +312,18 @@ class LLMService:
             )
         else:
             client = await self._get_openai_client(user_config)
-            response = await client.chat.completions.create(
-                model=_openai_model(user_config),
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message}
-                ],
-                temperature=0.7
+            return await self._with_retry(
+                f"OpenAI/{_openai_model(user_config)}",
+                lambda: self._openai_complete(
+                    client,
+                    model=_openai_model(user_config),
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message}
+                    ],
+                    temperature=0.7
+                )
             )
-            return response.choices[0].message.content.strip()
 
     async def generate_weekly_review(
         self,
@@ -275,15 +350,18 @@ class LLMService:
             )
         else:
             client = await self._get_openai_client(user_config)
-            response = await client.chat.completions.create(
-                model=_openai_model(user_config),
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message}
-                ],
-                temperature=0.7
+            return await self._with_retry(
+                f"OpenAI/{_openai_model(user_config)}",
+                lambda: self._openai_complete(
+                    client,
+                    model=_openai_model(user_config),
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message}
+                    ],
+                    temperature=0.7
+                )
             )
-            return response.choices[0].message.content.strip()
 
     async def evolve_memory(
         self,
@@ -308,14 +386,17 @@ class LLMService:
             )
         else:
             client = await self._get_openai_client(user_config)
-            response = await client.chat.completions.create(
-                model=_openai_model(user_config),
-                messages=[
-                    {"role": "system", "content": MEMORY_UPDATE_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_message}
-                ],
-                temperature=0.5
+            return await self._with_retry(
+                f"OpenAI/{_openai_model(user_config)}",
+                lambda: self._openai_complete(
+                    client,
+                    model=_openai_model(user_config),
+                    messages=[
+                        {"role": "system", "content": MEMORY_UPDATE_SYSTEM_PROMPT},
+                        {"role": "user", "content": user_message}
+                    ],
+                    temperature=0.5
+                )
             )
-            return response.choices[0].message.content.strip()
 
 llm = LLMService()
