@@ -6,5 +6,7 @@ services:
     volumes:
       - ./vault:/app/vault
       - ./.env:/app/.env:ro
+      # 运行日志落到宿主机，容器重建后仍能翻（不挂的话 logs/ 随容器一起消失）
+      - ./logs:/app/logs
     environment:
       - TZ=Asia/Shanghai

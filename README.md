@@ -275,6 +275,16 @@ docker compose up -d --build
 docker compose logs -f
 ```
 
+**运行日志还会另存一份到 `./logs/chronomirror.log`**（已通过 `docker-compose.yml`
+挂载到宿主机，容器重建不丢），按 2MB × 5 份轮转。两处内容一致，区别是：
+
+- `docker compose logs -f` 方便盯实时输出，但容器一重建就没了；
+- `logs/chronomirror.log` 是给事后排查用的。想追"某条消息到底进没进来"，
+  在文件里搜 `update=<编号>` 即可 —— 处理器入口和归档成功处各有一行，
+  两行都有是正常，只有入口那行说明卡在处理中，两行都没有说明更新没到机器人手里。
+
+日志已统一脱敏（`RedactingFormatter`），机器人令牌、各家 API Key 都不会明文落盘。
+
 ---
 
 ## 🛡️ 隐私与安全说明

@@ -67,6 +67,10 @@ class Settings(BaseSettings):
 
     # Storage Paths
     VAULT_DIR: Path = Field(default=BASE_DIR / "vault")
+    # 运行日志落盘目录。刻意不放在 vault/ 下：vault/logs 是用户的日记流水账
+    # （要给人看、被 Obsidian 索引），运行日志是给排障看的、会被轮转删掉。
+    # 两者混在一起，Obsidian 会把日志当笔记索引，"日志"这个词也会指代两件事。
+    LOG_DIR: Path = Field(default=BASE_DIR / "logs")
 
     @property
     def tzinfo(self) -> datetime.tzinfo:

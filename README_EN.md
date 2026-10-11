@@ -226,6 +226,17 @@ docker compose up -d --build
 docker compose logs -f
 ```
 
+**Runtime logs are also written to `./logs/chronomirror.log`** (bind-mounted to the
+host by `docker-compose.yml`, so it survives container rebuilds), rotating at
+2MB × 5 files. Both views carry the same lines; the difference is that
+`docker compose logs -f` is for watching live output and disappears with the
+container, while the file is what you grep after the fact. To trace whether a
+message ever arrived, search for `update=<update_id>` — there is one line at each
+handler's entry and one after a successful archive: both lines means normal, only
+the entry line means it got stuck mid-processing, neither line means the update
+never reached the bot. Logs run through `RedactingFormatter`, so bot tokens and
+provider API keys are never written in plaintext.
+
 ---
 
 ## 🔒 Privacy & Data Security

@@ -18,6 +18,9 @@ __pycache__/
 .idea/
 .vscode/
 
+# 运行日志（脱敏后仍含用户 ID 与附件路径，且会一直轮转，不进版本库）
+logs/
+
 # Vault User Privacy Data (绝对保护用户个人隐私与API Key)
 vault/logs/*.md
 vault/attachments/*
