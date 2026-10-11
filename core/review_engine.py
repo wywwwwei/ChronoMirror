@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from config.settings import settings
+from core.llm_errors import describe_llm_error, log_llm_error
 from core.storage import storage
 from core.llm_service import llm
 from core.user_config import user_config_manager
@@ -66,7 +67,8 @@ class ReviewEngine:
                 user_config=user_config
             )
         except Exception as e:
-            return False, f"生成日复盘失败，LLM 报错: {str(e)}", None
+            log_llm_error(e, context="daily-review", user_id=user_id)
+            return False, f"😔 生成日复盘失败。\n{describe_llm_error(e, '生成日复盘')}", None
 
         # 5. Save L1 review with Obsidian YAML frontmatter
         obsidian_content = (
@@ -81,7 +83,9 @@ class ReviewEngine:
         try:
             saved_path = await storage.save_daily_review(user_id, date_str, obsidian_content)
         except ValueError as e:
-            return False, f"复盘内容无法保存：{e}", None
+            log_llm_error(e, context="save-daily-review", user_id=user_id)
+            # 不在用户侧回显内部路径
+            return False, "❌ 复盘已生成但保存失败，请检查日期参数后重试。", None
         return True, review_text, saved_path
 
     async def run_weekly_review(self, user_id: int) -> Tuple[bool, str, Optional[Path]]:
@@ -116,7 +120,8 @@ class ReviewEngine:
                 user_config=user_config
             )
         except Exception as e:
-            return False, f"生成周复盘失败，LLM 报错: {str(e)}", None
+            log_llm_error(e, context="weekly-review", user_id=user_id)
+            return False, f"😔 生成周复盘失败。\n{describe_llm_error(e, '生成周复盘')}", None
 
         # 5. Save Weekly Review with Obsidian YAML frontmatter
         obsidian_weekly = (
@@ -139,7 +144,8 @@ class ReviewEngine:
             )
             await storage.save_user_profile(user_id, new_profile)
         except Exception as e:
-            print(f"[Warning] 更新用户 {user_id} 长期画像失败: {e}")
+            # 画像演进失败不该影响已经生成好的周复盘，只记日志
+            log_llm_error(e, context="memory-evolve", user_id=user_id)
 
         return True, weekly_text, saved_path
 

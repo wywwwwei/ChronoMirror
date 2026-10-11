@@ -6,6 +6,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from config.settings import settings
+from core.llm_errors import redact_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,7 @@ class UserConfigManager:
             except Exception as e:
                 logger.warning(
                     f"用户 {user_id} 的 config.json 解析失败，本次回退为默认配置"
-                    f"（原文件保留未改动，请检查是否损坏）: {e}"
+                    f"（原文件保留未改动，请检查是否损坏）: {redact_secrets(str(e))}"
                 )
 
         # New default user (must configure key via /setkey)

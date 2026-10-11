@@ -2,7 +2,7 @@ import logging
 from typing import Optional, Tuple
 from telegram import Update
 from telegram.constants import ParseMode
-from telegram.error import BadRequest
+from telegram.error import BadRequest, NetworkError, TelegramError, TimedOut
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -13,6 +13,7 @@ from telegram.ext import (
 
 from config.settings import settings
 from core.storage import storage
+from core.llm_errors import describe_llm_error, log_llm_error, redact_secrets
 from core.llm_service import llm
 from core.review_engine import review_engine
 from core.telegram_format import prepare_message, strip_tags
@@ -344,8 +345,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await status_msg.edit_text(f"🎙️ 已转写归档 [{now.strftime('%H:%M:%S')}]:\n\n{transcript}")
     except Exception as e:
-        logger.exception("语音处理失败")
-        await status_msg.edit_text(f"❌ 语音处理失败: {str(e)}")
+        log_llm_error(e, context="voice", user_id=user_id)
+        await status_msg.edit_text(f"❌ 语音处理失败。\n{describe_llm_error(e, '转写语音')}")
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ok, user_config = await ensure_user_ready(update)
@@ -387,13 +388,19 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await status_msg.edit_text(f"📸 影像特征已归档 [{now.strftime('%H:%M:%S')}]:\n\n{description}")
     except Exception as e:
-        logger.exception("图片解析失败")
-        await status_msg.edit_text(f"❌ 图片解析失败: {str(e)}")
+        log_llm_error(e, context="photo", user_id=user_id)
+        await status_msg.edit_text(f"❌ 图片解析失败。\n{describe_llm_error(e, '分析照片')}")
 
 from telegram.request import HTTPXRequest
 
 async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.warning(f"Telegram 网络或消息异常 (自动恢复重试): {context.error}")
+    """兜底错误处理器：只记日志，绝不把异常原文发回聊天窗口。"""
+    error = context.error
+    if isinstance(error, TelegramError) and not isinstance(error, (NetworkError, TimedOut)):
+        # 消息本身的毛病（被拉黑、实体解析失败等），不是代码 bug，不必刷堆栈
+        logger.warning(f"Telegram 交互异常 (自动恢复): {type(error).__name__}: {redact_secrets(str(error))}")
+        return
+    logger.error(f"未处理的异常: {type(error).__name__}: {redact_secrets(str(error))}", exc_info=error)
 
 def build_telegram_app(scheduler=None):
     if not settings.TELEGRAM_BOT_TOKEN:

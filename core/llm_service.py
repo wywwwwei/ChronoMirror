@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from config.settings import settings
+from core.llm_errors import redact_secrets
 from core.user_config import UserConfig
 from core.prompts import (
     IMAGE_ANALYSIS_PROMPT,
@@ -183,7 +184,7 @@ class LLMService:
                 delay = BASE_BACKOFF_SECONDS * (2 ** attempt)
                 logger.warning(
                     f"{operation} 第 {attempt + 1}/{retries} 次调用失败"
-                    f"（{type(e).__name__}），{delay:.0f}s 后重试: {e}"
+                    f"（{type(e).__name__}），{delay:.0f}s 后重试: {redact_secrets(str(e))}"
                 )
                 await asyncio.sleep(delay)
 
