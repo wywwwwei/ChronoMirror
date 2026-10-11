@@ -3,9 +3,12 @@ import datetime
 import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from telegram.constants import ParseMode
+from telegram.error import BadRequest
 
 from config.settings import settings
 from core.review_engine import review_engine
+from core.telegram_format import prepare_message, strip_tags
 from core.user_config import user_config_manager
 
 logger = logging.getLogger(__name__)
@@ -19,12 +22,23 @@ class ReviewScheduler:
         self.bot = bot
 
     async def _send_to_user(self, user_id: int, text: str):
+        """推送复盘正文。
+
+        之前这里是 `text[i:i+4000]` 硬切且没有 parse_mode，定时推送里的
+        `**粗体**` 到用户手里就是裸露的星号，长文还会被从中间劈开。
+        现在与机器人内手动的复盘共用同一套 Markdown->HTML 转换与切分。
+        """
         if not self.bot:
             return
-        chunk_size = 4000
         try:
-            for i in range(0, len(text), chunk_size):
-                await self.bot.send_message(chat_id=user_id, text=text[i:i + chunk_size])
+            for chunk in prepare_message(text or ""):
+                try:
+                    await self.bot.send_message(
+                        chat_id=user_id, text=chunk, parse_mode=ParseMode.HTML
+                    )
+                except BadRequest as e:
+                    logger.warning(f"向用户 {user_id} 的 HTML 渲染失败，回退为纯文本: {e}")
+                    await self.bot.send_message(chat_id=user_id, text=strip_tags(chunk))
         except Exception as e:
             logger.error(f"向用户 {user_id} 发送定时推送失败: {e}")
 

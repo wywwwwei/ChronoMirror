@@ -1,6 +1,8 @@
 import logging
 from typing import Optional, Tuple
 from telegram import Update
+from telegram.constants import ParseMode
+from telegram.error import BadRequest
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -13,6 +15,7 @@ from config.settings import settings
 from core.storage import storage
 from core.llm_service import llm
 from core.review_engine import review_engine
+from core.telegram_format import prepare_message, strip_tags
 from core.user_config import user_config_manager, UserConfig
 
 logger = logging.getLogger(__name__)
@@ -21,16 +24,20 @@ def is_authorized(user_id: int) -> bool:
     """白名单校验统一委托给 settings 上的唯一实现，避免两处逻辑漂移。"""
     return settings.is_user_allowed(user_id)
 
-async def send_long_message(update: Update, text: str, parse_mode: Optional[str] = None):
-    """Splits text into chunks of <= 4000 characters to comply with Telegram limits"""
-    chunk_size = 4000
-    if len(text) <= chunk_size:
-        await update.effective_message.reply_text(text, parse_mode=parse_mode)
-        return
+async def send_long_message(update: Update, text: str):
+    """发送模型生成的长文本：Markdown 转 Telegram HTML，并按上限安全切分。
 
-    for i in range(0, len(text), chunk_size):
-        chunk = text[i:i + chunk_size]
-        await update.effective_message.reply_text(chunk, parse_mode=parse_mode)
+    之前这里是直接按 4000 字符硬切后原样发出，parse_mode 为 None——模型写的
+    `**粗体**` 到用户手里就是一串星号，长复盘还会被从中间劈开。
+    """
+    for chunk in prepare_message(text or ""):
+        try:
+            await update.effective_message.reply_text(chunk, parse_mode=ParseMode.HTML)
+        except BadRequest as e:
+            # 转换器是保守子集，理论上是安全的；万一仍然解析失败，
+            # 宁可让用户看到纯文本，也不能整条消息丢掉。
+            logger.warning(f"HTML 渲染失败，回退为纯文本发送: {e}")
+            await update.effective_message.reply_text(strip_tags(chunk))
 
 async def ensure_user_ready(update: Update) -> Tuple[bool, Optional[UserConfig]]:
     """Checks whitelist and whether user has configured a valid API Key"""
