@@ -8,8 +8,15 @@ from config.settings import settings
 from core.storage import storage
 from core.review_engine import review_engine
 from core.scheduler import ReviewScheduler
-from core.user_config import user_config_manager
-from bot.telegram_bot import build_telegram_app
+from core.user_config import (
+    _MODEL_FIELDS,
+    apply_role_value,
+    available_roles,
+    get_role,
+    normalize_model_name,
+    user_config_manager,
+)
+from bot.telegram_bot import build_telegram_app, render_model_overview, render_role_tokens
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -62,12 +69,13 @@ async def run_cli_mode():
     print("指令说明:")
     print("  1. 记录文字 (直接输入文字回车)")
     print("  2. /setkey  (绑定 Key: /setkey gemini <key> 或 /setkey openai <key> [url])")
-    print("  3. /status  (查看当前 Key 状态)")
-    print("  4. /today   (查看今日流水账)")
-    print("  5. /review  (手动生成今日日复盘)")
-    print("  6. /weekly  (手动生成本周复盘)")
-    print("  7. /profile (查看长期画像)")
-    print("  8. /exit    (退出)")
+    print("  3. /setmodel (查看/调整模型档位: /setmodel <档位> <模型名> | /setmodel reset all)")
+    print("  4. /status  (查看当前 Key 状态)")
+    print("  5. /today   (查看今日流水账)")
+    print("  6. /review  (手动生成今日日复盘)")
+    print("  7. /weekly  (手动生成本周复盘)")
+    print("  8. /profile (查看长期画像)")
+    print("  9. /exit    (退出)")
     print("=" * 55 + "\n")
 
     while True:
@@ -106,12 +114,54 @@ async def run_cli_mode():
                 continue
             user_config_manager.save_user_config(stored)
             print(f"✅ {prov} Key 设置成功！当前生效: {stored.active_provider}")
+        elif user_input.startswith("/setmodel"):
+            parts = user_input.split()
+            # 与 /setkey 同理：改的必须是"用户自己的配置"，不能用 resolve_config 的
+            # 兜底副本，否则 .env 的全局 Key 会被一起写进 config.json。
+            stored = user_config_manager.get_user_config(CLI_USER_ID)
+            resolved = current_config()
+
+            if len(parts) == 1:
+                print(render_model_overview(stored, resolved, markup=False))
+            elif parts[1].lower() in ("reset", "clear"):
+                if len(parts) < 3:
+                    print(f"格式: /setmodel reset <档位|all>    可用档位: {render_role_tokens(resolved)}")
+                    continue
+                target = parts[2].lower()
+                if target == "all":
+                    for field_name in _MODEL_FIELDS:
+                        setattr(stored, field_name, None)
+                    stored.gemini_model = None
+                elif get_role(target) is None or target not in available_roles(resolved):
+                    print(f"❌ 档位 {target} 不可用。可用档位: {render_role_tokens(resolved)}")
+                    continue
+                else:
+                    apply_role_value(stored, target, None)
+                user_config_manager.save_user_config(stored)
+                print("✅ 已恢复为跟随 .env 默认值。")
+                print(render_model_overview(stored, current_config(), markup=False))
+            elif len(parts) < 3:
+                print(f"格式: /setmodel <档位> <模型名>    可用档位: {render_role_tokens(resolved)}")
+            elif get_role(parts[1].lower()) is None or parts[1].lower() not in available_roles(resolved):
+                print(f"❌ 档位 {parts[1].lower()} 不可用。可用档位: {render_role_tokens(resolved)}")
+            else:
+                model_name, error = normalize_model_name(" ".join(parts[2:]))
+                if error:
+                    print(f"❌ {error}")
+                    continue
+                role = parts[1].lower()
+                apply_role_value(stored, role, model_name)
+                user_config_manager.save_user_config(stored)
+                print(f"✅ 档位 {role} 已设置为 {model_name}")
         elif user_input == "/status":
             config = current_config()
             print(
                 f"提供商: {config.active_provider} | Key 来源: {config.key_source_label()} | "
                 f"Gemini: {config.masked_gemini_key()}, OpenAI: {config.masked_openai_key()}"
             )
+            print(render_model_overview(
+                user_config_manager.get_user_config(CLI_USER_ID), config, markup=False
+            ))
         elif user_input == "/today":
             today_str = settings.today().strftime("%Y-%m-%d")
             content = await storage.get_daily_log(CLI_USER_ID, today_str)
