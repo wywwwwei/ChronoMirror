@@ -47,8 +47,8 @@ async def ensure_user_ready(update: Update) -> Tuple[bool, Optional[UserConfig]]
         )
         return False, None
 
-    # 2. Key Check
-    config = user_config_manager.get_user_config(user.id)
+    # 2. Key Check（个人 Key 优先，私有白名单模式下可回落到 .env 全局 Key）
+    config = user_config_manager.resolve_config(user.id)
     if not config.has_valid_key():
         await update.effective_message.reply_text(
             "⚠️ **你尚未绑定有效的 AI API Key，暂时无法使用记录与复盘功能。**\n\n"
@@ -78,8 +78,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     config.first_name = user.first_name
     user_config_manager.save_user_config(config)
 
-    has_key = config.has_valid_key()
-    status_text = f"✅ 已就绪 (当前模型提供商: `{config.active_provider}`)" if has_key else "⚠️ **尚未绑定 API Key**（需先设置）"
+    effective = user_config_manager.resolve_config(user.id)
+    has_key = effective.has_valid_key()
+    status_text = (
+        f"✅ 已就绪 (当前模型提供商: `{effective.active_provider}`, Key 来源: {effective.key_source_label()})"
+        if has_key else "⚠️ **尚未绑定 API Key**（需先设置）"
+    )
 
     welcome_text = (
         f"👋 你好，{user.first_name}！欢迎使用 **ChronoMirror (溯镜)** 个人认知复盘外脑。\n\n"
@@ -124,7 +128,7 @@ async def setkey_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     args = context.args
     if not args or len(args) < 2:
-        config = user_config_manager.get_user_config(user.id)
+        config = user_config_manager.resolve_config(user.id)
         help_text = (
             "⚙️ **API Key 设置指令帮助**\n\n"
             "用法格式：\n"
@@ -141,6 +145,7 @@ async def setkey_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"- Gemini Key: `{config.masked_gemini_key()}`\n"
             f"- OpenAI Key: `{config.masked_openai_key()}`\n"
             f"- OpenAI Base URL: `{config.openai_base_url or '官方默认'}`\n"
+            f"- Key 来源: {config.key_source_label()}\n"
         )
         await update.effective_chat.send_message(help_text, parse_mode="Markdown")
         return
@@ -202,8 +207,12 @@ async def switch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     config.active_provider = target_provider
     user_config_manager.save_user_config(config)
 
-    has_key = config.has_valid_key()
-    key_tip = "✅ 密钥已就绪" if has_key else "⚠️ 注意：该提供商尚未配置 Key，请用 `/setkey` 配置"
+    effective = user_config_manager.resolve_config(user.id)
+    has_key = effective.has_valid_key()
+    key_tip = (
+        f"✅ 密钥已就绪 (来源: {effective.key_source_label()})" if has_key
+        else "⚠️ 注意：该提供商尚未配置 Key，请用 `/setkey` 配置"
+    )
     await update.effective_message.reply_text(
         f"🔄 当前生效的 AI 模型提供商已切换为: `{target_provider}`\n{key_tip}",
         parse_mode="Markdown"
@@ -211,7 +220,7 @@ async def switch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    config = user_config_manager.get_user_config(user.id)
+    config = user_config_manager.resolve_config(user.id)
 
     status_text = (
         f"📊 **ChronoMirror 账户配置状态**\n\n"
@@ -221,6 +230,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"- **Gemini 状态**: `{config.masked_gemini_key()}`\n"
         f"- **OpenAI 状态**: `{config.masked_openai_key()}`\n"
         f"- **OpenAI BaseURL**: `{config.openai_base_url or '官方默认'}`\n"
+        f"- **Key 来源**: {config.key_source_label()}\n"
         f"- **是否可正常使用**: {'✅ 是' if config.has_valid_key() else '❌ 否 (需设置 Key)'}\n"
     )
     await update.effective_message.reply_text(status_text, parse_mode="Markdown")

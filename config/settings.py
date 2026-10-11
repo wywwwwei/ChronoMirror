@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     # Storage Paths
     VAULT_DIR: Path = Field(default=BASE_DIR / "vault")
 
+    @field_validator("DEFAULT_LLM_PROVIDER")
+    @classmethod
+    def _validate_default_provider(cls, v: str) -> str:
+        value = (v or "gemini").strip().lower()
+        if value not in ("gemini", "openai"):
+            raise ValueError("DEFAULT_LLM_PROVIDER 只支持 'gemini' 或 'openai'")
+        return value
+
     @property
     def allowed_user_ids_list(self) -> List[int]:
         """白名单用户 ID 列表。空列表表示公开模式（见 is_public_mode）。"""
@@ -72,6 +80,27 @@ class Settings(BaseSettings):
         if not allowed:
             return True
         return user_id in allowed
+
+    @property
+    def env_llm_keys_configured(self) -> bool:
+        return bool(self.GEMINI_API_KEY or self.OPENAI_API_KEY)
+
+    @property
+    def env_key_fallback_enabled(self) -> bool:
+        """环境变量里的全局 LLM Key 是否可作为用户兜底 Key。
+
+        仅在私有（白名单）模式下启用：公开模式下若允许兜底，任何陌生人都能消耗
+        部署者自己的 API 额度。
+        """
+        return (not self.is_public_mode) and self.env_llm_keys_configured
+
+    def env_key_for(self, provider: str) -> Optional[str]:
+        provider = (provider or "").strip().lower()
+        if provider == "gemini":
+            return self.GEMINI_API_KEY
+        if provider == "openai":
+            return self.OPENAI_API_KEY
+        return None
 
     @property
     def logs_dir(self) -> Path:

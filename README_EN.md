@@ -109,12 +109,23 @@ cp .env.example .env
 Edit `.env`:
 ```ini
 TELEGRAM_BOT_TOKEN="your_bot_token_from_botfather"
+
+# Access whitelist (comma-separated numeric Telegram user IDs).
+#   your own ID -> private mode (recommended for self-hosting)
+#   "*"         -> public mode (open to every Telegram user)
+#   empty       -> public mode, with a startup warning (not recommended)
+ALLOWED_USER_IDS="123456789"
+
 # Optional proxy for networks requiring VPN (e.g. Clash):
 # TELEGRAM_PROXY="http://127.0.0.1:7890"
 
 DEFAULT_LLM_PROVIDER="gemini"
 GEMINI_API_KEY="your_gemini_key"
+GEMINI_MODEL="gemini-3.8-flash"
 ```
+
+> **⚠️ Global keys vs. whitelist**: the `GEMINI_API_KEY` / `OPENAI_API_KEY` in `.env` are used as a fallback **only in private mode (i.e. when `ALLOWED_USER_IDS` is set)**. In public mode they are never used as a fallback, so every user must run `/setkey` with their own key — otherwise strangers would spend your API quota. A key bound per-user via `/setkey` always takes precedence; `/status` shows the effective key source.
+
 
 ### 3. Run
 

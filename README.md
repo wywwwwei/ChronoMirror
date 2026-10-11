@@ -117,7 +117,7 @@ ALLOWED_USER_IDS="123456789"
 # 4. 大模型配置 (默认推荐 Gemini)
 DEFAULT_LLM_PROVIDER="gemini"
 GEMINI_API_KEY="your_gemini_api_key"
-GEMINI_MODEL="gemini-2.5-flash"
+GEMINI_MODEL="gemini-3.8-flash"
 
 # 若后续使用 OpenAI / DeepSeek / 硅基流动:
 # DEFAULT_LLM_PROVIDER="openai"
@@ -125,6 +125,9 @@ GEMINI_MODEL="gemini-2.5-flash"
 # OPENAI_BASE_URL="https://api.deepseek.com/v1"
 # OPENAI_MODEL="deepseek-chat"
 ```
+
+> **⚠️ 关于全局 Key 与白名单的关系**：`.env` 里的 `GEMINI_API_KEY` / `OPENAI_API_KEY` 只在**私有模式（配置了 `ALLOWED_USER_IDS`）**下作为白名单用户的兜底 Key 生效；公开模式下不会兜底，每位用户都必须自行 `/setkey`，以免陌生用户消耗你的 API 额度。
+> 当然，任何用户在对话里用 `/setkey` 绑定的个人 Key 优先级永远高于 `.env` 的全局 Key。用 `/status` 可以看到当前生效的「Key 来源」。
 
 ### 3. 启动运行
 
@@ -150,6 +153,7 @@ docker compose up -d --build
 系统原生支持**多用户复用同一个 Telegram Bot**：
 - **物理数据隔离**：每个用户的数据均独立保存在 `vault/users/<user_id>/` 下，彼此完全隔离，互不串扰。
 - **各自绑定 API Key**：未绑定 Key 的用户**无法调用 AI 记录与复盘功能**，保障系统资源的公平与安全。
+  （例外：私有模式下，白名单用户可直接复用 `.env` 里的全局 Key，无需逐个 `/setkey`；公开模式一律要求自备 Key。）
 - **密钥聊天防泄露**：当用户在 Telegram 私聊发送 `/setkey` 时，机器人会自动删除该条包含明文密钥的消息，防止留存在聊天记录中。
 - **访问白名单**：`ALLOWED_USER_IDS` 控制谁能使用机器人；未配置即为公开模式，启动时会打印醒目警告。
 

@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from config.settings import settings
 from core.user_config import UserConfig
 from core.prompts import (
     IMAGE_ANALYSIS_PROMPT,
@@ -11,6 +12,20 @@ from core.prompts import (
     WEEKLY_REVIEW_SYSTEM_PROMPT,
     MEMORY_UPDATE_SYSTEM_PROMPT,
 )
+
+# 模型字段为空表示"跟随 .env 默认值"（见 UserConfigManager.resolve_config）。
+# 这里再兜一层，避免调用方传入未解析的配置时把 None 当成模型名发给 API。
+def _gemini_model(cfg: UserConfig) -> str:
+    return cfg.gemini_model or settings.GEMINI_MODEL
+
+def _openai_model(cfg: UserConfig) -> str:
+    return cfg.openai_model or settings.OPENAI_MODEL
+
+def _openai_vision_model(cfg: UserConfig) -> str:
+    return cfg.openai_vision_model or settings.OPENAI_VISION_MODEL
+
+def _openai_whisper_model(cfg: UserConfig) -> str:
+    return cfg.openai_whisper_model or settings.OPENAI_WHISPER_MODEL
 
 class LLMService:
     def get_gemini_client(self, user_config: UserConfig):
@@ -62,14 +77,14 @@ class LLMService:
             image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
             return await self._call_gemini_with_retry(
                 client=client,
-                model=user_config.gemini_model,
+                model=_gemini_model(user_config),
                 contents=[image_part, prompt]
             )
         else:
             client = self.get_openai_client(user_config)
             b64_image = base64.b64encode(image_bytes).decode("utf-8")
             response = await client.chat.completions.create(
-                model=user_config.openai_vision_model,
+                model=_openai_vision_model(user_config),
                 messages=[
                     {
                         "role": "user",
@@ -103,14 +118,14 @@ class LLMService:
             stt_prompt = "请将该语音消息完整转录为文字，保留口语真实原意，不要添加任何多余的开场白或解释。"
             return await self._call_gemini_with_retry(
                 client=client,
-                model=user_config.gemini_model,
+                model=_gemini_model(user_config),
                 contents=[audio_part, stt_prompt]
             )
         else:
             client = self.get_openai_client(user_config)
             with open(audio_path, "rb") as audio_file:
                 transcript = await client.audio.transcriptions.create(
-                    model=user_config.openai_whisper_model,
+                    model=_openai_whisper_model(user_config),
                     file=audio_file
                 )
             return transcript.text.strip()
@@ -135,13 +150,13 @@ class LLMService:
             client = self.get_gemini_client(user_config)
             return await self._call_gemini_with_retry(
                 client=client,
-                model=user_config.gemini_model,
+                model=_gemini_model(user_config),
                 contents=[system_prompt, user_message]
             )
         else:
             client = self.get_openai_client(user_config)
             response = await client.chat.completions.create(
-                model=user_config.openai_model,
+                model=_openai_model(user_config),
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message}
@@ -170,13 +185,13 @@ class LLMService:
             client = self.get_gemini_client(user_config)
             return await self._call_gemini_with_retry(
                 client=client,
-                model=user_config.gemini_model,
+                model=_gemini_model(user_config),
                 contents=[system_prompt, user_message]
             )
         else:
             client = self.get_openai_client(user_config)
             response = await client.chat.completions.create(
-                model=user_config.openai_model,
+                model=_openai_model(user_config),
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message}
@@ -203,13 +218,13 @@ class LLMService:
             client = self.get_gemini_client(user_config)
             return await self._call_gemini_with_retry(
                 client=client,
-                model=user_config.gemini_model,
+                model=_gemini_model(user_config),
                 contents=[MEMORY_UPDATE_SYSTEM_PROMPT, user_message]
             )
         else:
             client = self.get_openai_client(user_config)
             response = await client.chat.completions.create(
-                model=user_config.openai_model,
+                model=_openai_model(user_config),
                 messages=[
                     {"role": "system", "content": MEMORY_UPDATE_SYSTEM_PROMPT},
                     {"role": "user", "content": user_message}

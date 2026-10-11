@@ -41,7 +41,7 @@ class ReviewEngine:
             return False, date_error, None
 
         # 1. Check User Config & Key
-        user_config = user_config_manager.get_user_config(user_id)
+        user_config = user_config_manager.resolve_config(user_id)
         if not user_config.has_valid_key():
             provider = user_config.active_provider
             return False, f"⚠️ 你尚未配置当前提供商 ({provider}) 的 API Key，无法生成复盘。\n请使用 `/setkey {provider} 你的Key` 进行设置。", None
@@ -85,7 +85,7 @@ class ReviewEngine:
 
     async def run_weekly_review(self, user_id: int) -> Tuple[bool, str, Optional[Path]]:
         # 1. Check User Config & Key
-        user_config = user_config_manager.get_user_config(user_id)
+        user_config = user_config_manager.resolve_config(user_id)
         if not user_config.has_valid_key():
             provider = user_config.active_provider
             return False, f"⚠️ 你尚未配置当前提供商 ({provider}) 的 API Key，无法生成周复盘。\n请使用 `/setkey {provider} 你的Key` 进行设置。", None

@@ -19,15 +19,44 @@ logger = logging.getLogger("ChronoMirror")
 
 CLI_USER_ID = 99999
 
+def log_startup_security_notice():
+    """启动时把访问模式与 Key 兜底策略讲清楚，避免部署者以为自己配了白名单"""
+    if settings.is_public_mode:
+        if settings.has_explicit_public_mode:
+            logger.warning("⚠️ 当前为【公开模式】(ALLOWED_USER_IDS='*')：任何 Telegram 用户都可以使用本机器人。")
+        else:
+            logger.warning(
+                "⚠️ 未配置 ALLOWED_USER_IDS，当前为【公开模式】：任何 Telegram 用户都可以使用本机器人。"
+                "自建自用请填写你的 User ID，或显式写 '*' 表明这是有意为之。"
+            )
+        if settings.env_llm_keys_configured:
+            logger.warning(
+                "⚠️ 检测到 .env 中配置了全局 LLM Key，但公开模式下【不会】作为用户兜底 Key 使用"
+                "（否则陌生用户会消耗你的额度）。每位用户都必须自行发送 /setkey 绑定。"
+            )
+    else:
+        logger.info(f"🔒 当前为【私有模式】：仅白名单用户 {settings.allowed_user_ids_list} 可用。")
+        if settings.env_key_fallback_enabled:
+            logger.info("ℹ️ 白名单用户未绑定个人 Key 时，将回落到 .env 中的全局 LLM Key。")
+
 async def run_cli_mode():
-    """Terminal interactive test mode (no Telegram bot token needed)"""
-    config = user_config_manager.get_user_config(CLI_USER_ID)
+    """Terminal interactive mode (no Telegram bot token needed).
+
+    CLI 是部署者本机自用，因此允许直接使用 .env 的全局 Key 兜底，无需白名单。
+    """
+    def current_config():
+        # 本地终端模式即"你自己在用"，允许直接使用 .env 的全局 Key；
+        # 该副本只存在于内存，不会被写回 config.json。
+        return user_config_manager.resolve_config(CLI_USER_ID, allow_env_fallback=True)
+
+    config = current_config()
 
     print("\n" + "=" * 55)
     print("🪞 欢迎进入 ChronoMirror (溯镜) 本地终端交互模式")
     print("=" * 55)
     print(f"当前测试用户 ID: {CLI_USER_ID}")
     print(f"当前提供商: {config.active_provider} | 密钥状态: {'✅ 已配置' if config.has_valid_key() else '⚠️ 未配置 (请用 /setkey)'}")
+    print(f"密钥来源: {config.key_source_label()}")
     print("指令说明:")
     print("  1. 记录文字 (直接输入文字回车)")
     print("  2. /setkey  (绑定 Key: /setkey gemini <key> 或 /setkey openai <key> [url])")
@@ -59,18 +88,28 @@ async def run_cli_mode():
             prov = parts[1].lower()
             key = parts[2]
             url = parts[3] if len(parts) > 3 else None
+            # 注意：必须改写"用户自己的配置"，不能用 resolve_config 的兜底副本，
+            # 否则 .env 的全局 Key 会被一起写进 config.json。
+            stored = user_config_manager.get_user_config(CLI_USER_ID)
             if prov == "gemini":
-                config.gemini_api_key = key
-                config.active_provider = "gemini"
+                stored.gemini_api_key = key
+                stored.active_provider = "gemini"
             elif prov == "openai":
-                config.openai_api_key = key
-                config.active_provider = "openai"
+                stored.openai_api_key = key
+                stored.active_provider = "openai"
                 if url:
-                    config.openai_base_url = url
-            user_config_manager.save_user_config(config)
-            print(f"✅ {prov} Key 设置成功！当前生效: {config.active_provider}")
+                    stored.openai_base_url = url
+            else:
+                print("❌ 只支持 gemini 或 openai。")
+                continue
+            user_config_manager.save_user_config(stored)
+            print(f"✅ {prov} Key 设置成功！当前生效: {stored.active_provider}")
         elif user_input == "/status":
-            print(f"提供商: {config.active_provider}, Gemini: {config.masked_gemini_key()}, OpenAI: {config.masked_openai_key()}")
+            config = current_config()
+            print(
+                f"提供商: {config.active_provider} | Key 来源: {config.key_source_label()} | "
+                f"Gemini: {config.masked_gemini_key()}, OpenAI: {config.masked_openai_key()}"
+            )
         elif user_input == "/today":
             import datetime
             today_str = datetime.date.today().strftime("%Y-%m-%d")
@@ -82,13 +121,13 @@ async def run_cli_mode():
         elif user_input.startswith("/review"):
             parts = user_input.split()
             target_date = parts[1] if len(parts) > 1 else None
-            print(f"正在生成复盘 (用户: {CLI_USER_ID}, LLM: {config.active_provider})...")
+            print(f"正在生成复盘 (用户: {CLI_USER_ID}, LLM: {current_config().active_provider})...")
             success, res, path = await review_engine.run_daily_review(CLI_USER_ID, target_date)
             print(f"\n{res}\n")
             if path:
                 print(f"已保存到: {path}")
         elif user_input == "/weekly":
-            print(f"正在生成周复盘 (用户: {CLI_USER_ID}, LLM: {config.active_provider})...")
+            print(f"正在生成周复盘 (用户: {CLI_USER_ID}, LLM: {current_config().active_provider})...")
             success, res, path = await review_engine.run_weekly_review(CLI_USER_ID)
             print(f"\n{res}\n")
             if path:
@@ -97,7 +136,7 @@ async def run_cli_mode():
             prof = await storage.get_user_profile(CLI_USER_ID)
             print(f"\n--- 长期画像与思维模型 (L3) ---\n{prof}\n-------------------------------")
         else:
-            if not config.has_valid_key():
+            if not current_config().has_valid_key():
                 print("⚠️ 尚未绑定有效 API Key，请先执行 `/setkey gemini 你的Key` 或 `/setkey openai 你的Key`")
                 continue
             await storage.append_log(user_id=CLI_USER_ID, content=user_input, tag="终端文字记录")
@@ -132,6 +171,7 @@ def main():
         sys.exit(1)
 
     logger.info("正在启动 ChronoMirror Telegram 机器人与多用户定时复盘服务...")
+    log_startup_security_notice()
     scheduler = ReviewScheduler()
     telegram_app = build_telegram_app(scheduler=scheduler)
 
