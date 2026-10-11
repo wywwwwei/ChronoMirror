@@ -1,0 +1,27 @@
+# ⚠️ 构建上下文必须排除以下内容，否则 `COPY . .` 会把密钥与用户隐私烧进镜像层
+
+# 密钥与环境变量（务必排除，容器运行时由 docker-compose 以只读卷挂载）
+.env
+.env.*
+!.env.example
+
+# 用户隐私数据：日记、语音/照片、明文 API Key。运行时通过 ./vault 卷挂载
+vault/
+
+# Python 环境与缓存
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# 测试
+tests/
+
+# 版本控制与 IDE / OS
+.git/
+.gitignore
+.idea/
+.vscode/
+.DS_Store
