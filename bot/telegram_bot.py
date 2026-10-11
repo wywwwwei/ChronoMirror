@@ -1,4 +1,3 @@
-import datetime
 import logging
 from typing import Optional, Tuple
 from telegram import Update
@@ -240,7 +239,7 @@ async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok:
         return
     user_id = update.effective_user.id
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
+    today_str = settings.today().strftime("%Y-%m-%d")
     content = await storage.get_daily_log(user_id, today_str)
     if not content:
         await update.effective_message.reply_text(f"今日 ({today_str}) 还没有任何记录，随时发点文字、语音或照片吧！")
@@ -265,7 +264,7 @@ async def review_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args:
         target_date = context.args[0].strip()
 
-    date_label = target_date or datetime.date.today().strftime("%Y-%m-%d")
+    date_label = target_date or settings.today().strftime("%Y-%m-%d")
     status_msg = await update.effective_message.reply_text(f"🤖 正在为 {date_label} 进行深度日复盘与思维诊断，请稍候...")
 
     success, review_text, path = await review_engine.run_daily_review(user_id=user_id, target_date=target_date)
@@ -300,7 +299,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
     text = update.effective_message.text
-    now = datetime.datetime.now()
+    now = settings.now()
     time_str = now.strftime("%H:%M:%S")
 
     await storage.append_log(user_id=user_id, content=text, tag="文字记录", dt=now)
@@ -320,7 +319,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tg_file = await voice.get_file()
         file_bytes = await tg_file.download_as_bytearray()
 
-        now = datetime.datetime.now()
+        now = settings.now()
         timestamp_str = now.strftime("%Y%m%d_%H%M%S")
         filename = f"voice_{timestamp_str}.ogg"
 
@@ -355,7 +354,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tg_file = await photo.get_file()
         file_bytes = await tg_file.download_as_bytearray()
 
-        now = datetime.datetime.now()
+        now = settings.now()
         timestamp_str = now.strftime("%Y%m%d_%H%M%S")
         filename = f"photo_{timestamp_str}.jpg"
 

@@ -21,6 +21,8 @@ CLI_USER_ID = 99999
 
 def log_startup_security_notice():
     """启动时把访问模式与 Key 兜底策略讲清楚，避免部署者以为自己配了白名单"""
+    logger.info(f"当前时区: {settings.TIMEZONE}（日志文件名、复盘日期、定时触发均以此为准）")
+
     if settings.is_public_mode:
         if settings.has_explicit_public_mode:
             logger.warning("⚠️ 当前为【公开模式】(ALLOWED_USER_IDS='*')：任何 Telegram 用户都可以使用本机器人。")
@@ -111,8 +113,7 @@ async def run_cli_mode():
                 f"Gemini: {config.masked_gemini_key()}, OpenAI: {config.masked_openai_key()}"
             )
         elif user_input == "/today":
-            import datetime
-            today_str = datetime.date.today().strftime("%Y-%m-%d")
+            today_str = settings.today().strftime("%Y-%m-%d")
             content = await storage.get_daily_log(CLI_USER_ID, today_str)
             if not content:
                 print(f"今日 ({today_str}) 暂无记录。")

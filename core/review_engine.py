@@ -3,6 +3,7 @@ import re
 from pathlib import Path
 from typing import Optional, Tuple
 
+from config.settings import settings
 from core.storage import storage
 from core.llm_service import llm
 from core.user_config import user_config_manager
@@ -46,7 +47,7 @@ class ReviewEngine:
             provider = user_config.active_provider
             return False, f"⚠️ 你尚未配置当前提供商 ({provider}) 的 API Key，无法生成复盘。\n请使用 `/setkey {provider} 你的Key` 进行设置。", None
 
-        date_str = target_date or datetime.date.today().strftime("%Y-%m-%d")
+        date_str = target_date or settings.today().strftime("%Y-%m-%d")
 
         # 2. Fetch L0 logs
         log_content = await storage.get_daily_log(user_id, date_str)
@@ -90,7 +91,7 @@ class ReviewEngine:
             provider = user_config.active_provider
             return False, f"⚠️ 你尚未配置当前提供商 ({provider}) 的 API Key，无法生成周复盘。\n请使用 `/setkey {provider} 你的Key` 进行设置。", None
 
-        today = datetime.date.today()
+        today = settings.today()
         week_label = today.strftime("%Y-W%W")
 
         # 2. Fetch past 7 days of L1 reviews for user

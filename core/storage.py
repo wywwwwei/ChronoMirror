@@ -70,7 +70,7 @@ class VaultStorage:
 
     async def save_attachment(self, user_id: int, file_bytes: bytes, filename: str) -> Tuple[Path, str]:
         """Saves an attachment into vault/users/<user_id>/attachments/YYYY-MM/filename"""
-        month_str = datetime.datetime.now().strftime("%Y-%m")
+        month_str = settings.now().strftime("%Y-%m")
         target_dir = self.get_user_attachments_dir(user_id) / month_str
         target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -90,7 +90,7 @@ class VaultStorage:
         attachment_rel_path: Optional[str] = None
     ) -> Path:
         """Appends an entry to today's log (vault/users/<user_id>/logs/YYYY-MM-DD.md)"""
-        now = dt or datetime.datetime.now()
+        now = dt or settings.now()
         date_str = now.strftime("%Y-%m-%d")
         time_str = now.strftime("%H:%M:%S")
         week_str = now.strftime("%Y-W%W")
@@ -152,7 +152,7 @@ class VaultStorage:
             return await f.read()
 
     async def get_recent_daily_reviews(self, user_id: int, days: int = 7) -> List[Tuple[str, str]]:
-        today = datetime.date.today()
+        today = settings.today()
         reviews = []
         for i in range(days - 1, -1, -1):
             d = today - datetime.timedelta(days=i)

@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import datetime
 from pathlib import Path
 from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator
@@ -38,8 +37,8 @@ class UserConfig(BaseModel):
     # 运行期标记：当前配置是否来自 .env 的全局兜底 Key（不落盘）
     env_key_fallback: bool = Field(default=False, exclude=True)
 
-    created_at: str = Field(default_factory=lambda: datetime.datetime.now().isoformat())
-    updated_at: str = Field(default_factory=lambda: datetime.datetime.now().isoformat())
+    created_at: str = Field(default_factory=lambda: settings.now().isoformat())
+    updated_at: str = Field(default_factory=lambda: settings.now().isoformat())
 
     @field_validator("active_provider")
     @classmethod
@@ -149,7 +148,7 @@ class UserConfigManager:
         return config.model_copy(update=updates)
 
     def save_user_config(self, config: UserConfig):
-        config.updated_at = datetime.datetime.now().isoformat()
+        config.updated_at = settings.now().isoformat()
         config_path = self._config_path(config.user_id)
         config_path.parent.mkdir(parents=True, exist_ok=True)
 

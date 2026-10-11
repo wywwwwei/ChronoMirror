@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class ReviewScheduler:
     def __init__(self, bot=None):
         self.bot = bot
-        self.scheduler = AsyncIOScheduler(timezone=settings.TIMEZONE)
+        self.scheduler = AsyncIOScheduler(timezone=settings.tzinfo)
 
     def set_bot(self, bot):
         self.bot = bot
@@ -62,7 +62,7 @@ class ReviewScheduler:
         daily_hour, daily_min = map(int, settings.DAILY_REVIEW_TIME.split(":"))
         self.scheduler.add_job(
             self.scheduled_daily_review,
-            CronTrigger(hour=daily_hour, minute=daily_min, timezone=settings.TIMEZONE),
+            CronTrigger(hour=daily_hour, minute=daily_min, timezone=settings.tzinfo),
             id="daily_review_job",
             replace_existing=True
         )
@@ -75,7 +75,7 @@ class ReviewScheduler:
                 day_of_week=settings.WEEKLY_REVIEW_DAY,
                 hour=weekly_hour,
                 minute=weekly_min,
-                timezone=settings.TIMEZONE
+                timezone=settings.tzinfo
             ),
             id="weekly_review_job",
             replace_existing=True
@@ -83,7 +83,7 @@ class ReviewScheduler:
 
         self.scheduler.start()
         logger.info(
-            f"定时调度已启动: 每日复盘={settings.DAILY_REVIEW_TIME}, "
+            f"定时调度已启动 (时区 {settings.TIMEZONE}): 每日复盘={settings.DAILY_REVIEW_TIME}, "
             f"周度复盘={settings.WEEKLY_REVIEW_DAY} {settings.WEEKLY_REVIEW_TIME}"
         )
 

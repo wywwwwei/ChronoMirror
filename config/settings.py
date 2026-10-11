@@ -1,13 +1,22 @@
+import datetime
+import logging
 import os
 from pathlib import Path
 from typing import List, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ALLOWED_USER_IDS 写 "*" 表示显式声明"公开模式"（对所有人开放）
 PUBLIC_MODE_SENTINEL = "*"
+
+# TIMEZONE 写错时的兜底时区，避免整个进程因一个环境变量启动失败
+FALLBACK_TIMEZONE = "Asia/Shanghai"
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -46,6 +55,27 @@ class Settings(BaseSettings):
 
     # Storage Paths
     VAULT_DIR: Path = Field(default=BASE_DIR / "vault")
+
+    @property
+    def tzinfo(self) -> datetime.tzinfo:
+        """TIMEZONE 的解析结果。写错时回退默认时区并告警，不让进程起不来。"""
+        try:
+            return ZoneInfo(self.TIMEZONE)
+        except (ZoneInfoNotFoundError, ValueError, KeyError):
+            logger.warning(f"TIMEZONE={self.TIMEZONE!r} 无法识别，本次回退为 {FALLBACK_TIMEZONE}")
+            return ZoneInfo(FALLBACK_TIMEZONE)
+
+    def now(self) -> datetime.datetime:
+        """当前时间（带 TIMEZONE 时区）。
+
+        全项目统一的时间来源：日志文件名、复盘日期、附件目录都必须用它，
+        否则定时任务按 TIMEZONE 触发、文件却按宿主机（常见是 UTC）时间命名，
+        就会出现"复盘推的是昨天 / 写进今天的文件"这类错位。
+        """
+        return datetime.datetime.now(self.tzinfo)
+
+    def today(self) -> datetime.date:
+        return self.now().date()
 
     @field_validator("DEFAULT_LLM_PROVIDER")
     @classmethod
