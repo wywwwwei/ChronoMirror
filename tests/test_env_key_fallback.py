@@ -66,7 +66,8 @@ class UserConfigResolutionTests(unittest.TestCase):
             _env_file=None,
             ALLOWED_USER_IDS="111",
             GEMINI_API_KEY="global-key",
-            GEMINI_MODEL="gemini-test-model",
+            GEMINI_CAPTURE_MODEL="gemini-capture-test",
+            GEMINI_REVIEW_MODEL="gemini-review-test",
             OPENAI_MODEL="openai-test-model",
         )
 
@@ -116,9 +117,13 @@ class UserConfigResolutionTests(unittest.TestCase):
         self.assertIsNone(data["openai_api_key"])
         # 模型未被显式指定时留空，表示"跟随 .env"，避免把默认值固化进用户配置
         self.assertIsNone(data["gemini_model"])
+        self.assertIsNone(data["gemini_capture_model"])
+        self.assertIsNone(data["gemini_review_model"])
 
-    def test_model_follows_env_when_not_pinned(self):
-        self.assertEqual(self.manager.resolve_config(111).gemini_model, "gemini-test-model")
+    def test_models_follow_env_when_not_pinned(self):
+        resolved = self.manager.resolve_config(111)
+        self.assertEqual(resolved.gemini_capture_model, "gemini-capture-test")
+        self.assertEqual(resolved.gemini_review_model, "gemini-review-test")
 
         stored = self.manager.get_user_config(111)
         stored.active_provider = "openai"
@@ -126,8 +131,34 @@ class UserConfigResolutionTests(unittest.TestCase):
         self.assertEqual(self.manager.resolve_config(111).openai_model, "openai-test-model")
 
     def test_explicit_model_overrides_env(self):
-        self.manager.save_user_config(UserConfig(user_id=111, gemini_model="my-pinned-model"))
-        self.assertEqual(self.manager.resolve_config(111).gemini_model, "my-pinned-model")
+        self.manager.save_user_config(UserConfig(user_id=111, gemini_capture_model="my-pinned-model"))
+        self.assertEqual(self.manager.resolve_config(111).gemini_capture_model, "my-pinned-model")
+
+    def test_legacy_single_model_field_maps_to_review_only(self):
+        """旧的单档 gemini_model 只喂 review。
+
+        存量用户（含仓库里那份真实 config.json）都钉着这个字段。若让它同时覆盖
+        capture，拆档在这些人身上等于没做——capture 会永远停在旧值上。
+        """
+        self.manager.save_user_config(UserConfig(user_id=111, gemini_model="legacy-model"))
+        resolved = self.manager.resolve_config(111)
+        self.assertEqual(resolved.gemini_review_model, "legacy-model")
+        self.assertEqual(resolved.gemini_capture_model, "gemini-capture-test")
+
+    def test_explicit_review_model_beats_legacy_field(self):
+        self.manager.save_user_config(
+            UserConfig(user_id=111, gemini_model="legacy-model", gemini_review_model="explicit-model")
+        )
+        self.assertEqual(self.manager.resolve_config(111).gemini_review_model, "explicit-model")
+
+    def test_resolved_config_never_carries_legacy_field(self):
+        """回填后 gemini_model 仍是 None，"用户钉过没有"才判断得出来。
+
+        一旦它被填上默认值，/status 的来源标签会全体显示成"个人设置"。
+        """
+        stored = self.manager.get_user_config(111)
+        self.assertIsNone(stored.gemini_model)
+        self.assertIsNone(self.manager.resolve_config(111).gemini_model)
 
     def test_corrupted_config_does_not_crash(self):
         path = self.manager._config_path(111)

@@ -62,8 +62,16 @@ def is_retryable_error(err: Exception) -> bool:
 
 # 模型字段为空表示"跟随 .env 默认值"（见 UserConfigManager.resolve_config）。
 # 这里再兜一层，避免调用方传入未解析的配置时把 None 当成模型名发给 API。
-def _gemini_model(cfg: UserConfig) -> str:
-    return cfg.gemini_model or settings.GEMINI_MODEL
+#
+# Gemini 按用途分两档：采集（每条语音/照片都跑）用便宜档，复盘（每天/每周一次）
+# 用强档。免费档的每日额度按 project 共享，采集用强档几个人就能打爆。
+def _gemini_capture_model(cfg: UserConfig) -> str:
+    return cfg.gemini_capture_model or settings.GEMINI_CAPTURE_MODEL
+
+def _gemini_review_model(cfg: UserConfig) -> str:
+    # 旧字段 gemini_model 是 review 档的前身；resolve_config 已把它并进
+    # gemini_review_model，这里再兜一层防止调用方传入未解析的配置。
+    return cfg.gemini_review_model or cfg.gemini_model or settings.GEMINI_REVIEW_MODEL
 
 def _openai_model(cfg: UserConfig) -> str:
     return cfg.openai_model or settings.OPENAI_MODEL
@@ -244,7 +252,7 @@ class LLMService:
             image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
             return await self._call_gemini_with_retry(
                 client=client,
-                model=_gemini_model(user_config),
+                model=_gemini_capture_model(user_config),
                 contents=[image_part, prompt]
             )
         else:
@@ -288,7 +296,7 @@ class LLMService:
             stt_prompt = "请将该语音消息完整转录为文字，保留口语真实原意，不要添加任何多余的开场白或解释。"
             return await self._call_gemini_with_retry(
                 client=client,
-                model=_gemini_model(user_config),
+                model=_gemini_capture_model(user_config),
                 contents=[audio_part, stt_prompt]
             )
         else:
@@ -328,7 +336,7 @@ class LLMService:
             client = await self._get_gemini_client(user_config)
             return await self._call_gemini_with_retry(
                 client=client,
-                model=_gemini_model(user_config),
+                model=_gemini_review_model(user_config),
                 contents=user_message,
                 system_instruction=system_prompt,
             )
@@ -367,7 +375,7 @@ class LLMService:
             client = await self._get_gemini_client(user_config)
             return await self._call_gemini_with_retry(
                 client=client,
-                model=_gemini_model(user_config),
+                model=_gemini_review_model(user_config),
                 contents=user_message,
                 system_instruction=system_prompt,
             )
@@ -404,7 +412,7 @@ class LLMService:
             client = await self._get_gemini_client(user_config)
             return await self._call_gemini_with_retry(
                 client=client,
-                model=_gemini_model(user_config),
+                model=_gemini_review_model(user_config),
                 contents=user_message,
                 system_instruction=MEMORY_UPDATE_SYSTEM_PROMPT,
             )

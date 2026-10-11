@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -37,12 +37,24 @@ class Settings(BaseSettings):
     DEFAULT_LLM_PROVIDER: str = Field(default="gemini", description="'gemini' or 'openai'")
 
     # Gemini API Settings
+    # 模型按用途拆两档：capture 是每条语音/照片都触发的采集，review 是每天/每周才跑一次的复盘。
+    # 免费档的每日额度按 project 共享，采集用强档几个人就能打爆，所以默认分档。
     GEMINI_API_KEY: Optional[str] = Field(default=None, description="Google Gemini API Key")
-    GEMINI_MODEL: str = Field(default="gemini-3.8-flash", description="Gemini model for text & multi-modal processing")
+    # 已废弃，仅用于兼容存量 .env：值会被映射到下面两个新档位上（见 model_validator）
+    GEMINI_MODEL: Optional[str] = Field(default=None, description="[DEPRECATED] use GEMINI_CAPTURE_MODEL / GEMINI_REVIEW_MODEL")
+
+    GEMINI_CAPTURE_MODEL: str = Field(
+        default="gemini-3.5-flash-lite",
+        description="Gemini model for high-frequency capture (audio transcription & image description)"
+    )
+    GEMINI_REVIEW_MODEL: str = Field(
+        default="gemini-3.8-flash",
+        description="Gemini model for low-frequency reviews (daily/weekly review & L3 profile evolution)"
+    )
 
     # OpenAI-compatible API Settings
     OPENAI_API_KEY: Optional[str] = Field(default=None, description="OpenAI or compatible provider API Key")
-    OPENAI_BASE_URL: Optional[str] = Field(default=None, description="Custom Base URL, e.g. https://api.deepseek.com/v1")
+    OPENAI_BASE_URL: Optional[str] = Field(default=None, description="Custom Base URL, e.g. https://api.siliconflow.cn/v1")
     OPENAI_MODEL: str = Field(default="gpt-4o-mini", description="Model for review and text reasoning")
     OPENAI_VISION_MODEL: str = Field(default="gpt-4o-mini", description="Vision model for image feature extraction")
     OPENAI_WHISPER_MODEL: str = Field(default="whisper-1", description="Audio transcription model")
@@ -76,6 +88,32 @@ class Settings(BaseSettings):
 
     def today(self) -> datetime.date:
         return self.now().date()
+
+    @model_validator(mode="after")
+    def _migrate_legacy_gemini_model(self):
+        """兼容旧的单档 GEMINI_MODEL：映射到两个新档位，避免存量部署无声换模型。
+
+        必须把它保留成一个真实字段才读得到：model_config 是 extra="ignore"，
+        而 pydantic-settings 会在任何 mode="before" 校验器之前就把未知键过滤掉
+        （实测 before 校验器拿到的是空 dict），所以"删字段 + before 校验器"这条路走不通。
+
+        用 model_fields_set 区分"部署者显式写了新变量"和"只是拿到了默认值"，
+        显式写的那个不被旧值覆盖。
+        """
+        legacy = (self.GEMINI_MODEL or "").strip()
+        if not legacy:
+            return self
+
+        explicit = self.model_fields_set
+        if "GEMINI_CAPTURE_MODEL" not in explicit:
+            self.GEMINI_CAPTURE_MODEL = legacy
+        if "GEMINI_REVIEW_MODEL" not in explicit:
+            self.GEMINI_REVIEW_MODEL = legacy
+        logger.warning(
+            f"GEMINI_MODEL 已拆分为 GEMINI_CAPTURE_MODEL 与 GEMINI_REVIEW_MODEL，"
+            f"本次按旧值 {legacy!r} 应用于未显式设置的档位。请更新 .env 后删除 GEMINI_MODEL。"
+        )
+        return self
 
     @field_validator("DEFAULT_LLM_PROVIDER")
     @classmethod
