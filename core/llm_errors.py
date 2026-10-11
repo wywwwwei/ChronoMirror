@@ -25,7 +25,10 @@ _SECRET_PATTERNS = (
     re.compile(r"(?i)bearer\s+[A-Za-z0-9._\-]{8,}"),
     re.compile(r"(?i)api[_-]?key[\"'=:\s]+[A-Za-z0-9._\-]{8,}"),
     re.compile(r"(?i)[?&]key=[A-Za-z0-9._\-]{8,}"),
-    re.compile(r"\b\d{6,}:[A-Za-z0-9_\-]{20,}\b"),  # Telegram bot token 形态
+    # Telegram bot token 形态。不能加前导 \b：令牌在 URL 里总是紧跟在 "bot" 后面
+    # （https://api.telegram.org/bot<数字>:<令牌>/...），"t" 和数字之间没有词边界，
+    # 加了 \b 就会漏掉唯一真正会泄露的那种形态。
+    re.compile(r"\d{6,}:[A-Za-z0-9_\-]{20,}"),
 )
 
 REDACTED = "[REDACTED]"
@@ -46,6 +49,25 @@ def redact_secrets(text: str) -> str:
     for pattern in _SECRET_PATTERNS:
         result = pattern.sub(REDACTED, result)
     return result
+
+
+class RedactingFormatter(logging.Formatter):
+    """日志落盘/打印前统一脱敏。
+
+    为什么必须有：httpx 会把完整请求 URL 打进自己的 INFO 日志，而 Telegram 的
+    接口地址长这样 ——
+
+        https://api.telegram.org/bot<token>/getUpdates
+
+    等于把机器人令牌明文写进日志。README 教的 `docker compose logs -f` 会把它
+    一路打出来，而容器日志经常被日志收集器抓走长期留存。异常路径同理：
+    TelegramError 的报文里也带着同一个 URL。
+
+    在 Formatter 层做，而不是在每个调用点做——漏一处就等于没做。
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        return redact_secrets(super().format(record))
 
 
 def _status_code_of(err: Exception) -> Optional[int]:

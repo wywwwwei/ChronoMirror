@@ -8,6 +8,7 @@ from config.settings import settings
 from core.storage import storage
 from core.review_engine import review_engine
 from core.scheduler import ReviewScheduler
+from core.llm_errors import RedactingFormatter
 from core.user_config import (
     _MODEL_FIELDS,
     apply_role_value,
@@ -18,10 +19,16 @@ from core.user_config import (
 )
 from bot.telegram_bot import build_telegram_app, render_model_overview, render_role_tokens
 
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
+# 日志统一经过脱敏：httpx 的 INFO 日志里带着完整请求 URL，
+# 而 Telegram 的 URL 含机器人令牌（见 RedactingFormatter 的说明）。
+_log_handler = logging.StreamHandler()
+_log_handler.setFormatter(
+    RedactingFormatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 )
+logging.basicConfig(level=logging.INFO, handlers=[_log_handler])
+
+# httpx 每次长轮询都打一行 INFO，噪音大且是令牌泄露的主要来源
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("ChronoMirror")
 
 CLI_USER_ID = 99999
